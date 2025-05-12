@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>柱はりの四方継手シミュレーション</title>
+  <style>
+    body { margin: 0; } /* デフォルトのmarginを削除 */
+    canvas { display: block; } /* canvasの不要な余白を防ぐ */
+
+    /* ★ ボタンとテキストをまとめるコンテナのスタイル */
+    #controlsContainer {
+      position: absolute; /* 親要素(body)を基準に絶対位置指定 */
+      top: 10px;          /* 上端から10px (上のマージン) */
+      left: 10px;         /* 左端から10px (左のマージン) */
+      z-index: 10;        /* canvas要素より手前に表示 */
+      background-color: rgba(255, 255, 255, 0.8); /* 背景を少し透過した白に */
+      padding: 10px;      /* コンテナの内側の余白 */
+      border-radius: 5px; /* 角を少し丸める */
+    }
+
+    /* 初期化ボタンのスタイル (position: absoluteは不要に) */
+    #resetButton {
+      /* position: absolute; は削除 */
+      display: block; /* ブロック要素にして幅をコンテナに合わせる (任意) */
+      width: 100%;    /* 幅を100%にする (任意) */
+      padding: 8px 0; /* 上下のパディングを調整 */
+      margin-bottom: 8px; /* ★ ボタンの下にマージンを追加 */
+      cursor: pointer;
+      /* 他のスタイル (背景色、枠線など) はお好みで */
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    /* ★ 説明テキストのスタイル */
+    #descriptionText {
+      margin: 0; /* デフォルトのマージンをリセット */
+      font-size: 16px; /* 文字サイズを小さめに */
+      color: #333;     /* 文字色 */
+      line-height: 1.4; /* 行間 */
+    }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+      }
+    }
+  </script>
+  <canvas id="stage"></canvas>
+
+  <div id="controlsContainer">
+    <button id="resetButton">初期位置に戻す</button>
+
+    <p id="descriptionText">
+      ・柱のダブルクリック: 柱の表示切替<br>
+      ・はり・車知栓ドラッグ: 移動<br>
+      ・マウス操作: 回転・拡大・移動<br>
+    </p>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
