@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>プラトー取り込みテストR070512</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import WebGPURenderer from 'three/addons/renderers/webgpu/WebGPURenderer.js'; // WebGPURendererをインポート
+
+        // --- グローバル変数 ---
+        let camera, scene, renderer, controls;
+
+        async function init() { // WebGPURendererの初期化は非同期なので async 関数にする
+            // --- 基本設定 ---
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            // --- WebGPURenderer の設定 ---
+            renderer = new WebGPURenderer({ antialias: true }); // WebGPURenderer を使用
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            // renderer.setClearColor(0xeeeeee); // WebGPURendererではsetClearAlphaも一緒に設定推奨
+            renderer.setClearColor(0xeeeeee, 1); // 背景色とアルファ
+            renderer.outputColorSpace = THREE.SRGBColorSpace; // 色空間を設定 (重要)
+
+            try {
+                await renderer.init(); // WebGPURendererの初期化 (非同期)
+                console.log('WebGPURenderer initialized successfully.');
+            } catch (error) {
+                console.error('Failed to initialize WebGPURenderer:', error);
+                // エラーメッセージを表示して処理を中断するなどのフォールバック処理
+                const message = document.createElement('div');
+                message.style.position = 'absolute';
+                message.style.top = '0';
+                message.style.left = '0';
+                message.style.width = '100%';
+                message.style.padding = '10px';
+                message.style.backgroundColor = 'red';
+                message.style.color = 'white';
+                message.style.textAlign = 'center';
+                if (error.message.includes("WebGPU isn't available")) {
+                    message.innerHTML = 'お使いのブラウザは WebGPU に対応していないか、有効になっていません。<br>WebGL版をお試しください。';
+                } else {
+                    message.innerHTML = `WebGPURenderer の初期化に失敗しました: ${error.message}`;
+                }
+                document.body.appendChild(message);
+                return; // 初期化に失敗したらここで終了
+            }
+
+            document.body.appendChild(renderer.domElement);
+
+            // --- カメラの位置 ---
+            camera.position.set(0, 2, 5);
+
+            // --- OrbitControls の設定 ---
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 1;
+            controls.maxDistance = 100;
+            controls.maxPolarAngle = Math.PI / 2;
+
+            // --- ライトの追加 ---
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5).normalize();
+            scene.add(directionalLight);
+
+            // --- GLTF モデルの読み込み ---
+            const loader = new GLTFLoader();
+        
+            // DRACOLoaderのインスタンスを作成し、デコーダーのパスを設定
+            const dracoLoader = new DRACOLoader();
+            // three.jsのバージョンに合わせてパスを指定します。
+            // 使用しているthreeのバージョンが0.160.0なので、対応するdracoのパスを指定します。
+            dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/gltf/');
+            dracoLoader.setDecoderConfig({ type: 'js' }); // type: 'wasm' も可能ですが、'js' の方が設定がシンプルな場合があります。
+                                                        // 'wasm' を使用する場合は、サーバーが .wasm ファイルを正しく配信できるように設定する必要があります。
+
+            // GLTFLoaderにDRACOLoaderを設定
+            loader.setDRACOLoader(dracoLoader);
+        
+            const modelPath = 'Three.js 取り込み用3（無鄰菴周辺）.glb'; 
+
+            loader.load(
+                modelPath,
+                function (gltf) {
+                    const model = gltf.scene;
+                    scene.add(model);
+                    console.log('モデルの読み込みに成功しました。');
+                },
+                function (xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                },
+                function (error) {
+                    console.error('モデルの読み込み中にエラーが発生しました:', error);
+                }
+            );
+
+            // --- ウィンドウリサイズ対応 ---
+            window.addEventListener('resize', onWindowResize, false);
+
+            // アニメーションを開始
+            animate();
+        }
+
+        // --- アニメーションループ ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls) controls.update(); // controlsが初期化されていれば更新
+
+            if (renderer && scene && camera) { // rendererなどが初期化されていればレンダリング
+                 renderer.render(scene, camera);
+            }
+        }
+
+        // --- ウィンドウリサイズ対応 ---
+        function onWindowResize() {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        // 初期化処理を実行
+        init().catch(error => {
+            // init内でハンドルできなかった予期せぬエラー
+            console.error("Initialization failed:", error);
+            const message = document.createElement('div');
+            message.textContent = "アプリケーションの初期化に失敗しました。コンソールを確認してください。";
+            // ... (エラー表示のスタイル設定) ...
+            document.body.appendChild(message);
+        });
+
+    </script>
+</body>
+</html>
