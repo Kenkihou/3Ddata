@@ -17,6 +17,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = false; 
 controls.dampingFactor = 0.05;
 controls.maxPolarAngle = 75 * (Math.PI / 180); // 90度をラジアンに変換
+controls.maxDistance = 20; 
+controls.minDistance = 3; // 必要に応じて、ターゲットに近づける最小距離も設定できます
 
 // 光源
 const ambientLight = new THREE.AmbientLight(0x404040, 3);
