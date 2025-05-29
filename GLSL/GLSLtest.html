@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLATEAU Building Height Visualizer</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        #app { width: 100vw; height: 100vh; display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background-color: #f0f0f0; /* デフォルトのボタン背景色 */
+            color: #333; /* デフォルトの文字色 */
+            transition: background-color 0.2s, color 0.2s; /* トランジションを追加 */
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+
+        /* ★ここから追加・修正するCSSクラス★ */
+        .btn-reset-color {
+            background-color: #cccccc; /* uResetColorと同じ */
+            color: #333; /* 文字色は見やすいように調整 */
+        }
+        .btn-10m-under-color {
+            background-color: #ff0000; /* uColor10mUnderと同じ */
+            color: #ffffff; /* 白文字で見やすく */
+        }
+        .btn-10m-15m-color {
+            background-color: #0000ff; /* uColor10m15mと同じ */
+            color: #ffffff; /* 白文字で見やすく */
+        }
+        .btn-15m-over-color {
+            background-color: #00ff00; /* uColor15mOverと同じ */
+            color: #333; /* 文字色は見やすいように調整 */
+        }
+        /* ★ここまで追加・修正するCSSクラス★ */
+
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <div id="controls">
+        <button id="btn-reset" class="btn-reset-color">リセット</button>
+        <button id="btn-10m-under" class="btn-10m-under-color">10m以下 (赤)</button>
+        <button id="btn-10m-15m" class="btn-10m-15m-color">10m超15m以下 (青)</button>
+        <button id="btn-15m-over" class="btn-15m-over-color">15m超 (緑)</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="./main.js"></script>
+</body>
+</html>
