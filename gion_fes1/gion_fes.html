@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gion Festival Simulator</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <script type="module">
+        // インポートマップにより、より簡潔なパスでモジュールをインポート
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        // GLBファイルへのパス
+        const modelPaths = [
+            'bld5234600.glb',
+            'bld5234601.glb',
+            'bld5234610.glb',
+            'bld5234611.glb'
+        ];
+
+        // 全モデルを格納するためのグループ
+        const modelsGroup = new THREE.Group();
+        scene = new THREE.Scene(); // シーンはinitの前に初期化
+        scene.add(modelsGroup); // シーンにグループを追加
+
+        let modelsLoadedCount = 0;
+        const totalModels = modelPaths.length;
+        
+        init();
+        // すべてのモデルがロードされた後にアニメーションループを開始
+        // これにより、モデルのロード中にレンダリングが開始されるのを防ぎます
+        // animate() は adjustCameraAndStartAnimation() の中で呼び出されます
+
+        function init() {
+            // シーンの作成 (既にグローバルで初期化済み)
+            scene.background = new THREE.Color(0x000000); // 背景色を真っ黒に設定
+
+            // カメラの作成
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); // far値を調整
+            // カメラの初期位置は、後でモデルのロード後に調整されるため、ここでは仮の値
+            camera.position.set(0, 0, 100); 
+            
+            // レンダラーの作成
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // 環境光の追加
+            // 環境光の強度を上げる
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // 柔らかな環境光を0.6から0.8に
+            scene.add(ambientLight);
+
+            // 方向性ライトの追加（太陽光のような役割）
+            // 方向性ライトの強度を上げる
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // 0.8から1.0に
+            directionalLight.position.set(100, 200, 150);
+            directionalLight.castShadow = true; // 影を有効にする（モデルによっては影の計算が必要）
+            scene.add(directionalLight);
+
+            // OrbitControlsの追加 (マウスでカメラを操作できるようにする)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.listenToKeyEvents(window); // キーボードイベントもリッスン
+            controls.enableDamping = true; // 動きを滑らかにする
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            // Y軸の上から見下ろす視点なので、地面の下にはいけないようにするが、真上から見た時にY軸回転を許可
+            controls.maxPolarAngle = Math.PI / 2; // 地面の下にはいけないようにする
+
+/*             // AxesHelperの追加
+            // 引数は軸の長さを示します。モデルのスケールに合わせて調整してください。
+            const axesHelper = new THREE.AxesHelper(500); 
+            scene.add(axesHelper); */
+
+            // GLTFローダーの作成
+            const loader = new GLTFLoader();
+
+            // 各GLBファイルを読み込む
+            modelPaths.forEach((path) => {
+                loader.load(
+                    path,
+                    function (gltf) {
+                        const model = gltf.scene;
+                        
+                        // モデル内の全てのメッシュを走査し、マテリアルの色を強制的に真っ白に変更
+                        model.traverse((child) => {
+                            if (child.isMesh) {
+                                // 強制的に新しい真っ白なMeshStandardMaterialを作成
+                                const whiteMaterial = new THREE.MeshStandardMaterial({
+                                    color: new THREE.Color(0xffffff), // 真っ白に戻す
+                                    metalness: 0.1, // 必要に応じて調整
+                                    roughness: 0.9,  // 必要に応じて調整
+                                    map: null, // テクスチャを強制的に無効にする (重要: ここは維持します)
+                                    vertexColors: false // 頂点カラーを強制的に無効にする (重要: ここは維持します)
+                                });
+
+                                // マテリアルが配列の場合と単一の場合を処理
+                                if (Array.isArray(child.material)) {
+                                    child.material = child.material.map(() => whiteMaterial);
+                                } else {
+                                    child.material = whiteMaterial;
+                                }
+                            }
+                        });
+
+                        // モデルを直接モデルグループに追加
+                        modelsGroup.add(model); 
+                        
+                        modelsLoadedCount++;
+
+                        console.log(`Model ${path} loaded!`);
+
+                        // 全てのモデルがロードされたら調整処理を開始
+                        if (modelsLoadedCount === totalModels) {
+                            adjustModelsPositionAndScale();
+                            adjustCameraAndStartAnimation();
+                        }
+                    },
+                    function (xhr) {
+                        console.log((xhr.loaded / xhr.total * 100).toFixed(2) + '% loaded of ' + path);
+                    },
+                    function (error) {
+                        console.error('An error happened loading ' + path, error);
+                    }
+                );
+            });
+
+            // ウィンドウのリサイズイベントハンドラ
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // 全モデルの位置とスケールを調整する関数
+        function adjustModelsPositionAndScale() {
+            // modelsGroupのバウンディングボックスを計算 (全てのモデルを含む)
+            const overallBox = new THREE.Box3().setFromObject(modelsGroup);
+            const overallSize = overallBox.getSize(new THREE.Vector3());
+            const overallCenter = overallBox.getCenter(new THREE.Vector3());
+
+            // モデル全体を原点(0,0,0)に移動させるためのオフセットを計算
+            // Y軸は地面に合わせるため、バウンディングボックスの下端を0に持ってくる
+            const offsetY = -overallBox.min.y;
+            const offsetX = -overallCenter.x;
+            const offsetZ = -overallCenter.z;
+
+            modelsGroup.position.set(offsetX, offsetY, offsetZ);
+
+            // モデル全体の最大辺を取得し、目標サイズ（例：150単位）に収まるようにスケールを計算
+            const maxDim = Math.max(overallSize.x, overallSize.y, overallSize.z);
+            const targetSize = 150; // 全体の最も長い辺がこの値になるようにスケール (Three.jsのワールド単位)
+            const scaleFactor = targetSize / maxDim;
+
+            // modelsGroup全体にスケールを適用
+            modelsGroup.scale.setScalar(scaleFactor);
+
+            console.log(`All models adjusted! Overall Scale Factor: ${scaleFactor.toFixed(4)}`);
+        }
+
+        // カメラ位置を調整し、アニメーションを開始する関数
+        function adjustCameraAndStartAnimation() {
+            // スケール調整後のmodelsGroupのバウンディングボックスを再計算
+            const finalBox = new THREE.Box3().setFromObject(modelsGroup);
+            const finalSize = finalBox.getSize(new THREE.Vector3());
+            const finalCenter = finalBox.getCenter(new THREE.Vector3());
+
+            // カメラが全体を見渡せるようにY位置（高さ）を計算
+            const fov = camera.fov * (Math.PI / 180);
+            // Y軸の正方向から見るため、XとZ方向の最大サイズを基準にカメラの距離を計算
+            let cameraDistance = Math.abs(Math.max(finalSize.x, finalSize.z) / 2 / Math.tan(fov / 2));
+            cameraDistance *= 1; // さらに余裕を持たせる (全体を見渡すため)
+
+            // カメラ位置をモデルの中心の真上（Y軸方向）に設定
+            // XとZはモデルの中心に合わせ、Yは十分な距離を持たせる
+            camera.position.set(finalCenter.x, finalCenter.y + cameraDistance, finalCenter.z); 
+            camera.lookAt(finalCenter); // 全体の中心を見る
+            controls.target.copy(finalCenter); // OrbitControlsのターゲットも中心に設定
+            controls.update();
+
+            console.log('Camera adjusted to fit all models from Y-axis top-down view. Animation started.');
+            animate(); // ここでアニメーションループを開始
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // OrbitControlsを更新
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
