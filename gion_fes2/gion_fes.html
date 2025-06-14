@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gion Festival Simulator ver2</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #timeDisplay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #ffffff; /* 白い文字色 */
+            font-family: 'Inter', sans-serif; /* 読みやすいフォント */
+            font-size: 2em; /* 大きめのフォントサイズ */
+            background-color: rgba(0, 0, 0, 0.5); /* 半透明の背景 */
+            padding: 10px 15px;
+            border-radius: 8px;
+            z-index: 100; /* 他の要素より手前に表示 */
+        }
+        .cube-label {
+            color: #ffffff; /* ラベルの文字色 */
+            font-family: 'Inter', sans-serif;
+            font-size: 0.8em; /* ラベルのフォントサイズ */
+            background-color: rgba(0, 0, 0, 0.6); /* ラベルの背景色 */
+            padding: 3px 6px;
+            border-radius: 4px;
+            white-space: nowrap; /* テキストを折り返さない */
+            pointer-events: none; /* マウスイベントを透過させる */
+            
+            /* 縦書き設定 */
+            writing-mode: vertical-rl; /* 縦書き（右から左へ）*/
+            text-orientation: upright; /* 文字の向きを揃える */
+            
+            /* 位置調整 */
+            /* CSS2DObjectの3D位置を基準点として、HTML要素をその基準点に対してどう配置するかをtransformで制御します。 */
+            /* transform-originを'bottom center'に設定することで、ラベルの「下端の中央」がCSS2DObjectの3D位置に来るようになります。 */
+            /* translateX(-50%) は、縦書きラベルの水平方向（レンダリング時の横方向）を要素の幅の半分だけ左にずらし、直方体の中心に揃えます。 */
+            transform: translateX(-50%); 
+            transform-origin: bottom center; /* ラベルの下部中央を基準点とする */
+
+            position: absolute; /* Three.jsによって位置が制御される */
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="timeDisplay">09:00:00</div> <!-- 時刻表示用の要素を追加 -->
+
+    <script type="module">
+        // インポートマップにより、より簡潔なパスでモジュールをインポート
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        // CSS2DRenderer と CSS2DObject をインポート
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        let scene, camera, renderer, controls, css2dRenderer; // css2dRenderer を追加
+        // GLBファイルへのパス
+        const modelPaths = [
+            'bld5234600.glb',
+            'bld5234601.glb',
+            'bld5234610.glb',
+            'bld5234611.glb',
+            'tran.glb',
+            'Relay_point.glb' 
+        ];
+
+        // 全モデルを格納するためのグループ
+        const modelsGroup = new THREE.Group();
+        scene = new THREE.Scene(); 
+        scene.add(modelsGroup); 
+
+        let modelsLoadedCount = 0;
+        const totalModels = modelPaths.length;
+
+        // アニメーション用直方体 (複数) とパスの定義
+        const movingCubes = []; // 直方体とそれに関連するデータ（ラベル含む）を格納する配列
+        const pathPoints = []; // アニメーションの中継地点のObject3Dを格納 (ソート済み)
+
+        // 各便の到着時刻を定義 (JSONから読み込むため、ここでは定義しない)
+        // 各要素は { label: string, arrivalTimes: number[] } となる
+        let allTripSchedules = []; 
+
+        let simulationStartTime = 0; 
+        const playbackSpeedMultiplier = 60; 
+        let allAnimationsFinished = false; 
+
+        // JSONスケジュールデータがロードされたかどうかのフラグ
+        let scheduleLoaded = false; 
+
+        // 時刻表示要素の取得
+        const timeDisplayElement = document.getElementById('timeDisplay');
+
+        init();
+
+        function init() {
+            scene.background = new THREE.Color(0x000000); 
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
+            camera.position.set(0, 0, 100); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // CSS2DRenderer の初期化
+            css2dRenderer = new CSS2DRenderer();
+            css2dRenderer.setSize(window.innerWidth, window.innerHeight);
+            css2dRenderer.domElement.style.position = 'absolute';
+            css2dRenderer.domElement.style.top = '0px';
+            css2dRenderer.domElement.style.pointerEvents = 'none'; // マウスイベントを透過させる
+            document.body.appendChild(css2dRenderer.domElement);
+
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); 
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); 
+            directionalLight.position.set(100, 200, 150);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.listenToKeyEvents(window);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.maxPolarAngle = Math.PI / 2; 
+
+            const loader = new GLTFLoader();
+
+            loadScheduleJson();
+
+            modelPaths.forEach((path) => {
+                loader.load(
+                    path,
+                    function (gltf) {
+                        const model = gltf.scene;
+                        
+                        if (path === 'Relay_point.glb') { 
+                            const tempPathPoints = [];
+                            model.traverse((child) => {
+                                if (child.name.match(/^0[1-7]_/)) {
+                                    tempPathPoints.push({ name: child.name, object: child });
+                                }
+                            });
+                            tempPathPoints.sort((a, b) => a.name.localeCompare(b.name));
+                            tempPathPoints.forEach(p => pathPoints.push(p.object)); 
+                            
+                            model.traverse((child) => {
+                                if (child.isMesh) {
+                                    child.material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+                                    child.visible = false; 
+                                }
+                            });
+
+                        } else {
+                            let materialColor;
+                            if (path === 'tran.glb') {
+                                materialColor = new THREE.Color(0xffff00); 
+                            } else {
+                                materialColor = new THREE.Color(0xffffff); 
+                            }
+
+                            model.traverse((child) => {
+                                if (child.isMesh) {
+                                    const newMaterial = new THREE.MeshStandardMaterial({
+                                        color: materialColor, 
+                                        metalness: 0.1, 
+                                        roughness: 0.9,  
+                                        map: null, 
+                                        vertexColors: false 
+                                    });
+                                    if (Array.isArray(child.material)) {
+                                        child.material = child.material.map(() => newMaterial);
+                                    } else {
+                                        child.material = newMaterial;
+                                    }
+                                }
+                            });
+                        }
+
+                        modelsGroup.add(model); 
+                        modelsLoadedCount++;
+
+                        checkAllResourcesLoaded();
+                    },
+                    function (xhr) {
+                        // console.log((xhr.loaded / xhr.total * 100).toFixed(2) + '% loaded of ' + path);
+                    },
+                    function (error) {
+                        console.error('An error happened loading ' + path, error);
+                    }
+                );
+            });
+
+            // ウィンドウのリサイズイベントハンドラ
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        async function loadScheduleJson() {
+            try {
+                const response = await fetch('schedule.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                const baseHour = 9; 
+                allTripSchedules = data.trips.map(trip => { 
+                    if (Array.isArray(trip)) { 
+                         return {
+                            label: `便${data.trips.indexOf(trip) + 1}`, 
+                            arrivalTimes: trip
+                                .filter(timeString => timeString !== "—")
+                                .map(timeString => {
+                                    const [hoursStr, minutesStr] = timeString.split(':');
+                                    const hours = parseInt(hoursStr);
+                                    const minutes = parseInt(minutesStr);
+                                    return (hours * 60 + minutes) - (baseHour * 60);
+                                })
+                        };
+                    } else { 
+                        return {
+                            label: trip.label, 
+                            arrivalTimes: trip.times 
+                                .filter(timeString => timeString !== "—")
+                                .map(timeString => {
+                                    const [hoursStr, minutesStr] = timeString.split(':');
+                                    const hours = parseInt(hoursStr);
+                                    const minutes = parseInt(minutesStr);
+                                    return (hours * 60 + minutes) - (baseHour * 60);
+                                })
+                        };
+                    }
+                });
+
+                scheduleLoaded = true;
+                console.log('Schedule loaded successfully (converted to minutes and with labels):', allTripSchedules);
+                checkAllResourcesLoaded(); 
+            }
+            catch (error) {
+                console.error('Error loading schedule.json:', error);
+                scheduleLoaded = true; 
+                allTripSchedules = []; 
+                checkAllResourcesLoaded();
+            }
+        }
+
+        function checkAllResourcesLoaded() {
+            if (modelsLoadedCount === totalModels && scheduleLoaded) {
+                adjustModelsPositionAndScale();
+                adjustCameraAndStartAnimation();
+                
+                if (pathPoints.length >= 7 && allTripSchedules.length > 0) {
+                    const boxGeometry = new THREE.BoxGeometry(25, 25, 25); 
+                    const boxMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 }); 
+
+                    allTripSchedules.forEach((tripData, index) => {
+                        if (tripData.arrivalTimes.length >= 2) {
+                            const cube = new THREE.Mesh(boxGeometry, boxMaterial);
+                            modelsGroup.add(cube); 
+                            
+                            const labelDiv = document.createElement('div');
+                            labelDiv.className = 'cube-label';
+                            labelDiv.textContent = tripData.label; 
+                            const labelObject = new CSS2DObject(labelDiv);
+                            
+                            // 直方体の高さの半分 (12.5) に、ラベルを上に移動させるための調整値を加える
+                            // この調整値を大きくして、ラベルが直方体からより離れるようにする
+                            labelObject.position.set(0, 12.5 + 100, 0); // 調整値を5から20に変更
+                            cube.add(labelObject); 
+
+                            const firstPointWorldPos = pathPoints[0].getWorldPosition(new THREE.Vector3());
+                            cube.position.copy(modelsGroup.worldToLocal(firstPointWorldPos));
+                            movingCubes.push({
+                                cube: cube,
+                                arrivalTimes: tripData.arrivalTimes,
+                                finished: false,
+                                labelObject: labelObject 
+                            });
+                        } else {
+                            console.warn(`Trip ${index + 1} has insufficient path points for animation (${tripData.arrivalTimes.length} points). Skipping this trip.`);
+                        }
+                    });
+                    
+                    simulationStartTime = performance.now(); 
+                    console.log("Animation setup complete. Simulation started at 9:00 AM. Total animated cubes:", movingCubes.length);
+                } else {
+                    console.warn("Animation setup failed: Insufficient path points (expected at least 7) or no trip schedules found.");
+                    allAnimationsFinished = true; 
+                }
+            }
+        }
+
+        function adjustModelsPositionAndScale() {
+            const overallBox = new THREE.Box3().setFromObject(modelsGroup);
+            const overallSize = overallBox.getSize(new THREE.Vector3());
+            const overallCenter = overallBox.getCenter(new THREE.Vector3());
+
+            const offsetY = -overallBox.min.y;
+            const offsetX = -overallCenter.x;
+            const offsetZ = -overallCenter.z;
+
+            modelsGroup.position.set(offsetX, offsetY, offsetZ);
+
+            const maxDim = Math.max(overallSize.x, overallSize.y, overallSize.z);
+            const targetSize = 150; 
+            const scaleFactor = targetSize / maxDim;
+
+            modelsGroup.scale.setScalar(scaleFactor);
+
+            console.log(`All models adjusted! Overall Scale Factor: ${scaleFactor.toFixed(4)}`);
+        }
+
+        function adjustCameraAndStartAnimation() {
+            const finalBox = new THREE.Box3().setFromObject(modelsGroup);
+            const finalSize = finalBox.getSize(new THREE.Vector3());
+            const finalCenter = finalBox.getCenter(new THREE.Vector3());
+
+            const fov = camera.fov * (Math.PI / 180);
+            let cameraDistance = Math.abs(Math.max(finalSize.x, finalSize.z) / 2 / Math.tan(fov / 2));
+            cameraDistance *= 1.5; 
+
+            camera.position.set(finalCenter.x, finalCenter.y + cameraDistance, finalCenter.z); 
+            camera.lookAt(finalCenter); 
+            controls.target.copy(finalCenter); 
+            controls.update();
+
+            console.log('Camera adjusted to fit all models from Y-axis top-down view. Animation started.');
+            animate(); 
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            css2dRenderer.setSize(window.innerWidth, window.innerHeight); // CSS2DRenderer もリサイズ
+        }
+
+        function formatTime(simulatedElapsedTimeMinutes) { 
+            const startHour = 9; 
+            const seconds = Math.floor((simulatedElapsedTimeMinutes % 1) * 60);
+            const totalMinutesInteger = Math.floor(simulatedElapsedTimeMinutes);
+            const currentTotalMinutesFromNine = startHour * 60 + totalMinutesInteger;
+            
+            const hours = Math.floor(currentTotalMinutesFromNine / 60);
+            const minutes = Math.floor(currentTotalMinutesFromNine % 60);
+
+            const paddedHours = String(hours).padStart(2, '0');
+            const paddedMinutes = String(minutes).padStart(2, '0');
+            const paddedSeconds = String(seconds).padStart(2, '0');
+
+            return `${paddedHours}:${paddedMinutes}:${paddedSeconds}`;
+        }
+
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+
+            controls.update(); 
+
+            let displayTime = "09:00:00"; 
+            let anyCubeStillMoving = false; 
+
+            if (simulationStartTime > 0 && pathPoints.length > 0 && allTripSchedules.length > 0) {
+                const realElapsedTimeMs = currentTime - simulationStartTime;
+                const simulatedElapsedTimeMinutes = (realElapsedTimeMs / 1000 / 60) * playbackSpeedMultiplier;
+
+                // 時刻表示を更新
+                if (!allAnimationsFinished) {
+                    displayTime = formatTime(simulatedElapsedTimeMinutes);
+                } else {
+                    let maxFinalTime = 0;
+                    allTripSchedules.forEach(tripData => { 
+                        if (tripData.arrivalTimes.length > 0) {
+                            maxFinalTime = Math.max(maxFinalTime, tripData.arrivalTimes[tripData.arrivalTimes.length - 1]);
+                        }
+                    });
+                    displayTime = formatTime(maxFinalTime);
+                }
+                timeDisplayElement.textContent = displayTime;
+
+                if (!allAnimationsFinished) {
+                    movingCubes.forEach(cubeData => {
+                        if (cubeData.finished) {
+                            cubeData.cube.visible = false;
+                            cubeData.labelObject.element.style.display = 'none';
+                            return; 
+                        }
+
+                        const cube = cubeData.cube;
+                        const arrivalTimes = cubeData.arrivalTimes; 
+                        const labelObject = cubeData.labelObject; 
+                        
+                        if (arrivalTimes.length === 0) {
+                            cubeData.finished = true;
+                            cube.visible = false; 
+                            labelObject.element.style.display = 'none'; 
+                            return;
+                        }
+
+                        const lastArrivalTime = arrivalTimes[arrivalTimes.length - 1];
+                        
+                        if (simulatedElapsedTimeMinutes >= lastArrivalTime) {
+                            const lastPointIndex = arrivalTimes.length - 1;
+                            const lastPointWorldPos = pathPoints[lastPointIndex].getWorldPosition(new THREE.Vector3());
+                            cube.position.copy(modelsGroup.worldToLocal(lastPointWorldPos));
+                            cubeData.finished = true; 
+                            cube.visible = false; 
+                            labelObject.element.style.display = 'none'; 
+                            console.log(`Cube finished its animation (simulated ${formatTime(lastArrivalTime)})!`);
+                            return;
+                        }
+
+                        if (simulatedElapsedTimeMinutes < arrivalTimes[0]) {
+                            const firstPointWorldPos = pathPoints[0].getWorldPosition(new THREE.Vector3());
+                            cube.position.copy(modelsGroup.worldToLocal(firstPointWorldPos));
+                            anyCubeStillMoving = true; 
+                            cube.visible = true;
+                            labelObject.element.style.display = 'block';
+                            return;
+                        }
+
+                        let fromPointIndex = -1;
+                        let toPointIndex = -1;
+                        for (let i = 0; i < arrivalTimes.length - 1; i++) {
+                            if (simulatedElapsedTimeMinutes >= arrivalTimes[i] && simulatedElapsedTimeMinutes < arrivalTimes[i + 1]) {
+                                fromPointIndex = i;
+                                toPointIndex = i + 1;
+                                break;
+                            }
+                            else if (simulatedElapsedTimeMinutes < arrivalTimes[i]) {
+                                fromPointIndex = i - 1; 
+                                toPointIndex = i;       
+                                break;
+                            }
+                        }
+
+                        if (fromPointIndex === -1 && toPointIndex === -1 && simulatedElapsedTimeMinutes > arrivalTimes[arrivalTimes.length - 1]) {
+                            const lastPointIndex = arrivalTimes.length - 1;
+                            const lastPointWorldPos = pathPoints[lastPointIndex].getWorldPosition(new THREE.Vector3());
+                            cube.position.copy(modelsGroup.worldToLocal(lastPointWorldPos));
+                            cube.visible = true; 
+                            labelObject.element.style.display = 'block';
+                            anyCubeStillMoving = true; 
+                        }
+                        else if (fromPointIndex !== -1 && toPointIndex !== -1) {
+                            const startPointObject = pathPoints[fromPointIndex];
+                            const endPointObject = pathPoints[toPointIndex];
+
+                            const segmentStartTime = arrivalTimes[fromPointIndex];
+                            const segmentEndTime = arrivalTimes[toPointIndex];
+                            const segmentDurationMinutes = segmentEndTime - segmentStartTime;
+
+                            const timeInSegmentMinutes = simulatedElapsedTimeMinutes - segmentStartTime;
+
+                            let t = 0; 
+                            if (segmentDurationMinutes > 0) {
+                                t = timeInSegmentMinutes / segmentDurationMinutes;
+                            }
+                            t = Math.min(Math.max(t, 0), 1); 
+
+                            const startPositionWorld = startPointObject.getWorldPosition(new THREE.Vector3());
+                            const endPositionWorld = endPointObject.getWorldPosition(new THREE.Vector3());
+                            const interpolatedWorldPosition = new THREE.Vector3().lerpVectors(startPositionWorld, endPositionWorld, t);
+                            
+                            cube.position.copy(modelsGroup.worldToLocal(interpolatedWorldPosition));
+                            anyCubeStillMoving = true; 
+                            cube.visible = true; 
+                            labelObject.element.style.display = 'block'; 
+
+                        } else {
+                            cube.visible = false;
+                            labelObject.element.style.display = 'none';
+                        }
+                    });
+
+                    if (!anyCubeStillMoving && movingCubes.length > 0) { 
+                        allAnimationsFinished = true;
+                        console.log('All cubes have finished their animation.');
+                    }
+                    if (movingCubes.length === 0 && allTripSchedules.length > 0 && pathPoints.length >= 7) {
+                        allAnimationsFinished = true;
+                    }
+                }
+            } else {
+                timeDisplayElement.textContent = "09:00:00";
+            }
+
+            renderer.render(scene, camera);
+            css2dRenderer.render(scene, camera); 
+        }
+    </script>
+</body>
+</html>
