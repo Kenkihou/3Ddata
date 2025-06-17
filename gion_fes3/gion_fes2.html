@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>祇園祭 山鉾巡行シミュレーション</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: black; /* bodyの背景も黒に設定 */
+        }
+        canvas { 
+            display: block; 
+        }
+        #time-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white; /* 時計の文字色を白に */
+            font-family: monospace;
+            font-size: 2em;
+            background-color: rgba(50, 50, 50, 0.7); /* 背景を少し暗いグレーに */
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #info-display { /* 新しく追加する情報表示用のスタイル */
+            position: absolute;
+            top: 10px;
+            right: 10px; /* 右上に配置 */
+            color: white;
+            font-family: 'メイリオ', Meiryo, sans-serif;
+            font-size: 1.2em; /* 時刻表示より小さめ */
+            background-color: rgba(50, 50, 50, 0.7);
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 100;
+            white-space: nowrap; /* テキストが改行されないように */
+        }
+        .yamahoko-label {
+            position: absolute;
+            color: white; /* 山鉾名の文字色を白に */
+            background-color: rgba(255, 255, 255, 0.7); /* 半透明の白背景 */
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'メイリオ', Meiryo, sans-serif;
+            font-size: 0.8em;
+            white-space: nowrap;
+            transform: translate(-50%, -100%); /* 中央揃えと立方体の上部に配置 */
+            pointer-events: none;
+            z-index: 99;
+            text-shadow: 0px 0px 3px black, 0px 0px 3px black; /* 黒い影で見やすく */
+        }
+        .point-label {
+            position: absolute;
+            color: lightskyblue; /* 地点名の文字色を明るい水色に */
+            font-family: 'メイリオ', Meiryo, sans-serif;
+            font-size: 0.7em; /* 山鉾名より小さめ */
+            white-space: nowrap;
+            transform: translate(-50%, -50%); /* テキストの中心を座標に合わせる */
+            pointer-events: none;
+            z-index: 98; /* 山鉾名より下に */
+            text-shadow: 0px 0px 2px black, 0px 0px 2px black; /* 黒い影で見やすく */
+        }
+    </style>
+</head>
+<body>
+    <div id="time-display"></div>
+    <div id="info-display"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        // import { AxesHelper } from 'three/addons/helpers/AxesHelper.js'; // AxesHelperは不要なので削除
+
+        // --- シーン、カメラ、レンダラーの設定 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000); // 黒背景
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 8000); 
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        document.body.appendChild(renderer.domElement);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // --- カメラコントロール ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.25;
+        controls.minPolarAngle = 0.01; // ほぼ真上から見下ろせるように
+        controls.maxPolarAngle = Math.PI / 2 - 0.01; // 真横より少し上まで (フリップ防止)
+
+        // --- 時刻表示DOM要素 ---
+        const timeDisplay = document.getElementById('time-display');
+        // --- 情報表示DOM要素 ---
+        const infoDisplay = document.getElementById('info-display');
+
+        // --- 定数 ---
+        const SIMULATION_SPEED_MULTIPLIER = 120;
+        const START_HOUR = 8;
+        const START_MINUTE = 25;
+        
+        const SIMULATION_START_TIME_OFFSET_MS = (START_HOUR * 3600 + START_MINUTE * 60) * 1000;
+
+        // --- グローバル変数 ---
+        let relayPoints = {};
+        let yamahokoData = [];
+        let yamahokoMeshes = [];
+        let yamahokoLabels = []; 
+        let pointLabels = [];
+
+        let lastTime = 0;
+        let simulationClockTimeMs = 0;
+        let animationFrameId = null;
+        let simulationEndTimeMs = 0;
+
+
+        // --- ヘルパー関数 ---
+        function timeToMsOffset(timeStr) {
+            if (typeof timeStr !== 'string' || !timeStr.includes(':')) {
+                console.error(`timeToMsOffset: Invalid time string format (type or colon missing): "${timeStr}"`);
+                return NaN;
+            }
+            
+            const parts = timeStr.split(':').map(Number);
+            
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                return (parts[0] * 3600 + parts[1] * 60) * 1000;
+            }
+            
+            console.error(`timeToMsOffset: Invalid time string format (parsing error): "${timeStr}" -> Parsed parts: [${parts[0]}, ${parts[1]}]`);
+            return NaN;
+        }
+
+        function updateTimeDisplay(currentSimTimeOffsetMs) {
+            const totalSeconds = Math.floor(Math.max(0, currentSimTimeOffsetMs) / 1000);
+            
+            if (isNaN(totalSeconds)) {
+                timeDisplay.textContent = "Error: Invalid Time (NaN totalSeconds)";
+                return;
+            }
+
+            const hours = Math.floor(totalSeconds / 3600) % 24;
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            const formattedTime = `${String(hours).padStart(2, '0')}時${String(minutes).padStart(2, '0')}分${String(seconds).padStart(2, '0')}秒`;
+            timeDisplay.textContent = formattedTime;
+        }
+
+        async function loadData() {
+            try {
+                const responseRelay = await fetch('Relay_point.json');
+                if (!responseRelay.ok) {
+                    throw new Error(`HTTP error! status: ${responseRelay.status} for Relay_point.json`);
+                }
+                const dataRelay = await responseRelay.json();
+                dataRelay.forEach(point => {
+                    const x = parseFloat(point.location.x);
+                    const y = parseFloat(point.location.y);
+                    const z = parseFloat(point.location.z);
+                    if (isNaN(x) || isNaN(y) || isNaN(z)) {
+                        console.error(`loadData: Invalid coordinate for relay point "${point.name}": x=${point.location.x}, y=${point.location.y}, z=${point.location.z}`);
+                    } else {
+                        // ここで座標変換を行います！
+                        // JSONのXはそのままThree.jsのX
+                        // JSONのZ（高さ）をThree.jsのY（上方向）にマッピング
+                        // JSONのY（奥行き）をThree.jsのZ（奥行き）にマッピング。この際、マップの北が奥になるように符号を反転。
+                        relayPoints[point.name] = new THREE.Vector3(x, z, -y); 
+                    }
+                });
+                console.log("Loaded Relay Points:", relayPoints);
+
+                const responseYamahoko = await fetch('yamahoko2.json');
+                if (!responseYamahoko.ok) {
+                    throw new Error(`HTTP error! status: ${responseYamahoko.status} for yamahoko2.json`);
+                }
+                yamahokoData = await responseYamahoko.json();
+                console.log("Loaded Yamahoko Data:", yamahokoData);
+
+                initializeScene();
+                
+                calculateSimulationEndTime();
+
+                updateTimeDisplay(SIMULATION_START_TIME_OFFSET_MS + simulationClockTimeMs); 
+                infoDisplay.textContent = `令和６年祇園祭山鉾巡行${SIMULATION_SPEED_MULTIPLIER}倍速表示`;
+
+                animationFrameId = requestAnimationFrame(animate);
+            } catch (error) {
+                console.error('Error loading JSON data:', error);
+                timeDisplay.textContent = `Error: Data Load Failed! (${error.message})`;
+            }
+        }
+
+        function calculateSimulationEndTime() {
+            let maxEndTimeMs = 0;
+
+            yamahokoData.forEach(yamanoko => {
+                if (yamanoko.position && yamanoko.position.length > 0) {
+                    const lastPositionEntry = yamanoko.position[yamanoko.position.length - 1];
+                    const lastTimeStr = Object.values(lastPositionEntry)[0];
+                    const endTimeMs = timeToMsOffset(lastTimeStr);
+
+                    if (!isNaN(endTimeMs)) {
+                        maxEndTimeMs = Math.max(maxEndTimeMs, endTimeMs);
+                    } else {
+                        console.warn(`calculateSimulationEndTime: Invalid end time for ${yamanoko.name}: "${lastTimeStr}". This yamahoko might not stop correctly.`);
+                    }
+                }
+            });
+
+            simulationEndTimeMs = maxEndTimeMs; 
+            console.log("Calculated Simulation End Time (00:00:00 基準):", simulationEndTimeMs / 1000 / 60 / 60, "時間", (simulationEndTimeMs / 1000 / 60) % 60, "分");
+        }
+
+
+        function initializeScene() {
+            // AxesHelperは不要なので追加しない
+            // const axesHelper = new AxesHelper(1000); 
+            // scene.add(axesHelper); 
+
+            const geometry = new THREE.BoxGeometry(20, 20, 20);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+
+            yamahokoData.forEach(yamanoko => {
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.name = yamanoko.name;
+                scene.add(mesh); 
+                yamahokoMeshes.push({
+                    data: yamanoko,
+                    mesh: mesh
+                });
+
+                if (yamanoko.position && yamanoko.position.length > 0) {
+                    const firstPointName = Object.keys(yamanoko.position[0])[0];
+                    if (relayPoints[firstPointName]) {
+                        mesh.position.copy(relayPoints[firstPointName]);
+                    } else {
+                        console.warn(`initializeScene: Relay point "${firstPointName}" not found for ${yamanoko.name}. Setting mesh to (0,0,0).`);
+                        mesh.position.set(0, 0, 0); 
+                    }
+                } else {
+                    console.warn(`initializeScene: No position data for ${yamanoko.name}. Setting mesh to (0,0,0).`);
+                    mesh.position.set(0, 0, 0);
+                }
+
+                const labelDiv = document.createElement('div');
+                labelDiv.className = 'yamahoko-label';
+                labelDiv.textContent = yamanoko.name;
+                document.body.appendChild(labelDiv);
+                yamahokoLabels.push({ mesh: mesh, label: labelDiv });
+            });
+
+            yamahokoData.forEach(yamanoko => {
+                const points = [];
+                if (yamanoko.position) {
+                    for (let i = 0; i < yamanoko.position.length; i++) {
+                        const pointName = Object.keys(yamanoko.position[i])[0];
+                        if (relayPoints[pointName]) {
+                            points.push(relayPoints[pointName]);
+                        }
+                    }
+                }
+                if (points.length > 1) {
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const material = new THREE.LineBasicMaterial({ color: 0xaaaaaa, linewidth: 2 }); 
+                    const line = new THREE.Line(geometry, material);
+                    scene.add(line); 
+                } else {
+                    console.warn(`initializeScene: Not enough points to draw path for ${yamanoko.name}. Points found: ${points.length}`);
+                }
+            });
+
+            for (const pointName in relayPoints) {
+                if (!pointName.includes('基位置')) {
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'point-label';
+                    labelDiv.textContent = pointName;
+                    document.body.appendChild(labelDiv);
+                    pointLabels.push({ position: relayPoints[pointName], label: labelDiv });
+                }
+            }
+
+            adjustCamera();
+        }
+
+        const _vector = new THREE.Vector3();
+
+        function animate(currentTime) {
+            const currentSimTimeOffset = SIMULATION_START_TIME_OFFSET_MS + simulationClockTimeMs;
+
+            if (currentSimTimeOffset >= simulationEndTimeMs && simulationEndTimeMs !== 0) {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                    console.log("Simulation finished. Animation stopped.");
+                }
+                updateTimeDisplay(simulationEndTimeMs); 
+                updateYamahokoLabels();
+                updatePointLabels();
+                controls.update();
+                renderer.render(scene, camera);
+                return;
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+
+            if (lastTime === 0 || isNaN(lastTime)) {
+                lastTime = currentTime;
+                console.warn("animate: Initializing or resetting lastTime due to invalid value.");
+            }
+
+            let deltaTime = currentTime - lastTime;
+
+            if (isNaN(deltaTime) || deltaTime < 0) {
+                console.warn(`animate: deltaTime is NaN or negative (${deltaTime}). Skipping time update for this frame. Resetting lastTime.`);
+                lastTime = currentTime;
+                controls.update();
+                renderer.render(scene, camera);
+                return;
+            }
+
+            lastTime = currentTime;
+
+            simulationClockTimeMs += deltaTime * SIMULATION_SPEED_MULTIPLIER;
+            
+            if (isNaN(simulationClockTimeMs)) {
+                console.error("animate: simulationClockTimeMs became NaN. Stopping animation.");
+                timeDisplay.textContent = "Error: Simulation Time Corrupted!";
+                return;
+            }
+
+            const finalSimTimeOffsetMs = Math.min(SIMULATION_START_TIME_OFFSET_MS + simulationClockTimeMs, simulationEndTimeMs);
+            updateTimeDisplay(finalSimTimeOffsetMs);
+
+            yamahokoMeshes.forEach(yamanokoObj => {
+                const yamanoko = yamanokoObj.data;
+                const mesh = yamanokoObj.mesh;
+
+                if (!yamanoko.position || yamanoko.position.length < 2) {
+                    return;
+                }
+
+                let foundSegment = false;
+                for (let i = 0; i < yamanoko.position.length - 1; i++) {
+                    const startPointEntry = yamanoko.position[i];
+                    const endPointEntry = yamanoko.position[i + 1];
+
+                    const startPointName = Object.keys(startPointEntry)[0];
+                    const endPointName = Object.keys(endPointEntry)[0];
+
+                    const startTimeStr = Object.values(startPointEntry)[0];
+                    const endTimeStr = Object.values(endPointEntry)[0];
+
+                    const startTimeOffsetMs = timeToMsOffset(startTimeStr);
+                    const endTimeOffsetMs = timeToMsOffset(endTimeStr);
+
+                    if (isNaN(startTimeOffsetMs) || isNaN(endTimeOffsetMs)) {
+                        continue; 
+                    }
+
+                    if (startTimeOffsetMs >= endTimeOffsetMs) { 
+                        continue;
+                    }
+
+                    if (finalSimTimeOffsetMs >= startTimeOffsetMs && finalSimTimeOffsetMs <= endTimeOffsetMs) {
+                        foundSegment = true;
+                        const segmentDurationMs = endTimeOffsetMs - startTimeOffsetMs;
+                        const elapsedInSegmentMs = finalSimTimeOffsetMs - startTimeOffsetMs;
+                        
+                        let t = segmentDurationMs === 0 ? 0 : elapsedInSegmentMs / segmentDurationMs; 
+                        t = Math.max(0, Math.min(1, t));
+
+                        if (relayPoints[startPointName] && relayPoints[endPointName]) {
+                            const startPos = relayPoints[startPointName];
+                            const endPos = relayPoints[endPointName];
+                            mesh.position.lerpVectors(startPos, endPos, t);
+                        } else {
+                            console.warn(`animate: Missing relay points for segment: ${startPointName} to ${endPointName} for ${yamanoko.name}. Cannot update position.`);
+                        }
+                        break;
+                    }
+                }
+
+                if (!foundSegment) {
+                    const firstPointTimeOffsetMs = timeToMsOffset(Object.values(yamanoko.position[0])[0]);
+                    const lastPointTimeOffsetMs = timeToMsOffset(Object.values(yamanoko.position[yamanoko.position.length - 1])[0]);
+
+                    if (isNaN(firstPointTimeOffsetMs) || isNaN(lastPointTimeOffsetMs)) {
+                        return;
+                    }
+
+                    if (finalSimTimeOffsetMs < firstPointTimeOffsetMs) {
+                        const initialPointName = Object.keys(yamanoko.position[0])[0];
+                        if (relayPoints[initialPointName]) {
+                            mesh.position.copy(relayPoints[initialPointName]);
+                        }
+                    } 
+                    else if (finalSimTimeOffsetMs > lastPointTimeOffsetMs) {
+                        const finalPointName = Object.keys(yamanoko.position[yamanoko.position.length - 1])[0];
+                        if (relayPoints[finalPointName]) {
+                            mesh.position.copy(relayPoints[finalPointName]);
+                        }
+                    }
+                }
+            });
+
+            updateYamahokoLabels();
+            updatePointLabels();
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        /**
+         * 各山鉾の3D位置を2Dスクリーン座標に変換し、DOMラベルを更新する。
+         */
+        function updateYamahokoLabels() {
+            yamahokoLabels.forEach(item => {
+                const mesh = item.mesh;
+                const label = item.label;
+
+                mesh.updateWorldMatrix(true, false);
+                _vector.setFromMatrixPosition(mesh.matrixWorld);
+
+                // Y軸方向の上方へ少しオフセットする (これは変換後のY軸、つまり元のZ軸方向)
+                _vector.y += 10; 
+
+                _vector.project(camera);
+
+                const isBehind = _vector.z > 1; // カメラの奥にあるかどうか
+
+                if (isBehind) {
+                    label.style.display = 'none';
+                } else {
+                    label.style.display = 'block';
+                    
+                    const x = (_vector.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+                    const y = (-_vector.y * 0.5 + 0.5) * renderer.domElement.clientHeight;
+
+                    label.style.left = `${x}px`;
+                    label.style.top = `${y}px`;
+                    label.style.transform = `translate(-50%, -100%)`; // ラベルの原点を中央下部にして、立方体の上部にくるように調整
+                }
+            });
+        }
+
+        /**
+         * 各中継地点の3D位置を2Dスクリーン座標に変換し、DOMラベルを更新する。
+         */
+        function updatePointLabels() {
+            pointLabels.forEach(item => {
+                const point3D = item.position;
+                const label = item.label;
+
+                _vector.copy(point3D); 
+
+                _vector.project(camera);
+
+                const isBehind = _vector.z > 1; // カメラの奥にあるかどうか
+
+                if (isBehind) {
+                    label.style.display = 'none';
+                } else {
+                    label.style.display = 'block';
+                    
+                    const x = (_vector.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+                    const y = (-_vector.y * 0.5 + 0.5) * renderer.domElement.clientHeight;
+
+                    label.style.left = `${x}px`;
+                    label.style.top = `${y}px`;
+                    label.style.transform = `translate(-50%, -50%)`; // ラベルの原点を中心に
+                }
+            });
+        }
+
+
+        function adjustCamera() {
+            const bbox = new THREE.Box3();
+            if (Object.keys(relayPoints).length === 0) {
+                console.warn("adjustCamera: No relay points loaded, cannot adjust camera automatically. Setting default camera position.");
+                camera.position.set(0, 500, 500); // デフォルトの位置
+                camera.lookAt(0, 0, 0);
+                controls.target.set(0, 0, 0);
+                controls.update();
+                return;
+            }
+
+            // 全ての地点を含むバウンディングボックスを計算
+            Object.values(relayPoints).forEach(point => {
+                bbox.expandByPoint(point);
+            });
+
+            // バウンディングボックスの中心を計算
+            const center = new THREE.Vector3();
+            bbox.getCenter(center);
+
+            // バウンディングボックスのサイズを計算
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+
+            // シーン全体が見えるようにカメラの距離を計算
+            // XZ平面（新しいY軸が上方向の平面）の最大寸法を考慮
+            const maxHorizontalDim = Math.max(size.x, size.z); // 今回の変換ではこれが水平方向の広がり
+            const fov = camera.fov * (Math.PI / 180);
+            // カメラがXZ平面を上から見下ろす形で、画面にオブジェクト全体が収まるようにY軸方向の距離を計算
+            let cameraDistance = Math.abs(maxHorizontalDim / 2 / Math.tan(fov / 2));
+            cameraDistance *= 1.5; // 少し遠めに調整して余白を持たせる
+
+            // カメラの位置をY軸方向の真上からに設定
+            // Y座標を高くし、XとZは中心に合わせる
+            // `center.y + cameraDistance` で中心のY座標よりさらに上へ移動
+            camera.position.set(center.x, center.y + cameraDistance, center.z); 
+            
+            // カメラが中心を向くように設定
+            camera.lookAt(center);
+
+            // OrbitControlsのターゲットも中心に設定
+            controls.target.copy(center);
+
+            // OrbitControlsを更新して新しいカメラ設定を適用
+            controls.update();
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            updateYamahokoLabels();
+            updatePointLabels();
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
