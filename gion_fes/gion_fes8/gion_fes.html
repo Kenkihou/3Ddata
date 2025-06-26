@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>祇園祭 山鉾巡行シミュレーション with Interactive Buildings</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: black;
+            font-family: 'メイリオ', Meiryo, sans-serif;
+        }
+        canvas.webgl-canvas {
+            display: block; 
+            position: fixed;
+            top: 0;
+            left: 0;
+            outline: none;
+        }
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: black; display: flex; justify-content: center;
+            align-items: center; z-index: 9999;
+        }
+        #loading-message {
+            color: white; font-size: 2em;
+        }
+        .ui-panel {
+            position: absolute; color: white; background-color: rgba(50, 50, 50, 0.7);
+            padding: 5px 10px; border-radius: 5px; z-index: 100;
+        }
+        #time-display { top: 10px; left: 10px; font-family: monospace; font-size: 2em; }
+        
+        #building-info-display { 
+            top: 70px;
+            left: 10px; 
+            font-size: 1.2em;
+            white-space: pre-wrap; 
+            line-height: 1.5;
+        }
+
+        .yamahoko-label {
+            position: absolute; color: white; background-color: rgba(0, 0, 0, 0.7);
+            padding: 2px 5px; border-radius: 3px; font-size: 0.8em;
+            white-space: nowrap; transform: translate(-50%, -120%);
+            pointer-events: none; z-index: 99; text-shadow: 0px 0px 3px black;
+            writing-mode: vertical-rl; text-orientation: upright;
+        }
+        .point-label {
+            position: absolute; color: black; background-color: rgba(255, 255, 255, 0.7);
+            padding: 2px 5px; border-radius: 3px; font-size: 0.7em;
+            white-space: nowrap; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 98;
+        }
+        #controls-container {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 80%; max-width: 800px; background-color: rgba(50, 50, 50, 0.7);
+            padding: 10px; border-radius: 10px; display: flex; align-items: center;
+            gap: 15px; z-index: 101; height: 60px; box-sizing: border-box;
+        }
+        #playPauseBtn, #master-mute-btn {
+            padding: 5px 15px; font-size: 1em; cursor: pointer;
+            width: 150px; text-align: center; white-space: nowrap; box-sizing: border-box; 
+        }
+        #seek-container { position: relative; width: 100%; height: 40px; }
+        #seekBar { width: 100%; cursor: pointer; margin: 0; }
+        #time-markers-container {
+            position: absolute; top: 25px; left: 0; width: 100%;
+            display: flex; pointer-events: none; font-family: monospace; font-size: 0.8em;
+        }
+        .time-marker { position: absolute; transform: translateX(-50%); color: white; }
+        #visibility-controls {
+            position: absolute; top: 10px; right: 10px; width: 280px;
+            background-color: rgba(50, 50, 50, 0.7); color: white; font-size: 0.9em;
+            padding: 10px; border-radius: 5px; z-index: 102; display: flex;
+            flex-direction: column; gap: 5px; max-height: 95vh; overflow-y: auto;
+        }
+        .visibility-item { display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%; gap: 5px; }
+        .visibility-toggle-btn { width: 60px; flex-shrink: 0; }
+        #master-visibility-controls { display: flex; gap: 10px; width: 100%; margin-bottom: 8px; }
+        .master-btn { width: 100%; background-color: #555; color: white; border: 1px solid #777; cursor: pointer; }
+        .name-container { display: flex; align-items: center; gap: 10px; }
+        .rank-column { width: 110px; flex-shrink: 0; }
+        .name-column { color: red; }
+    </style>
+</head>
+<body>
+    <canvas class="webgl-canvas"></canvas>
+    
+    <video id="video-player" loop muted autoplay playsinline style="display:none" src="../gion_asset/sample_movie2.mp4"></video>
+
+    <div id="loading-overlay">
+        <div id="loading-message">読み込み中...</div>
+    </div>
+
+    <div id="visibility-controls"></div>
+    <div id="time-display" class="ui-panel"></div>
+    
+    <div id="building-info-display" class="ui-panel">モデルをダブルクリックしてください</div>
+
+    <div id="controls-container">
+        <button id="master-mute-btn">音声オン</button>
+        <button id="playPauseBtn">再生</button>
+        <div id="seek-container">
+            <input type="range" id="seekBar" value="0" min="0" max="1000">
+            <div id="time-markers-container"></div>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- =================== GLSL シェーダーコードセクション ==================== -->
+    <!-- ====================================================================== -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        attribute float _id;
+        varying vec3 vNormal;
+        varying float vBuildingID;
+        varying vec3 vWorldPosition;
+        
+        void main() {
+            vBuildingID = _id;
+            vNormal = normalize(normalMatrix * normal);
+            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        varying float vBuildingID;
+        varying vec3 vNormal;
+        varying vec3 vWorldPosition;
+
+        uniform float uSelectedID;
+        uniform vec3 uBaseColor;
+        uniform vec3 uHighlightColor;
+        
+        void main() {
+            if (vWorldPosition.z > 800.0 || vWorldPosition.z < -800.0 || vWorldPosition.x < -1050.0 || vWorldPosition.x > 950.0) {
+                discard;
+            }
+
+            vec3 finalColor = uBaseColor;
+            if (vBuildingID > 0.0 && vBuildingID == uSelectedID) {
+                finalColor = uHighlightColor;
+            }
+
+            vec3 lightDirection = normalize(vec3(0.5, 1.0, 0.75));
+            float ambientLight = 0.4;
+            float diffuse = max(dot(vNormal, lightDirection), 0.0);
+            float brightness = ambientLight + (1.0 - ambientLight) * diffuse;
+            vec3 lightedColor = finalColor * brightness;
+            
+            gl_FragColor = vec4(lightedColor, 1.0);
+        }
+    </script>
+
+    <!-- ====================================================================== -->
+    <!-- ====================== JavaScript アプリケーションコード ==================== -->
+    <!-- ====================================================================== -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        class GionSimulationApp {
+            constructor() {
+                this.setupCore();
+                this.setupDOM();
+                this.setupConstants();
+                this.setupState();
+                this.loadInitialData();
+            }
+
+            setupCore() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x000000);
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 8000);
+                
+                const canvas = document.querySelector('.webgl-canvas');
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas: canvas });
+
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.25;
+                this.controls.minPolarAngle = 0.01;
+                this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
+
+                this.setupLights();
+                this.setupClipping();
+            }
+            
+            setupClipping() {
+                this.clippingPlanes = [
+                    new THREE.Plane(new THREE.Vector3(0, 0, -1), 800),
+                    new THREE.Plane(new THREE.Vector3(0, 0, 1), 800),
+                    new THREE.Plane(new THREE.Vector3(1, 0, 0), 1050),
+                    new THREE.Plane(new THREE.Vector3(-1, 0, 0), 950)
+                ];
+                this.renderer.localClippingEnabled = true;
+            }
+            
+            setupDOM() {
+                this.timeDisplay = document.getElementById('time-display');
+                this.buildingInfoDisplay = document.getElementById('building-info-display');
+                this.playPauseBtn = document.getElementById('playPauseBtn');
+                this.seekBar = document.getElementById('seekBar');
+                this.timeMarkersContainer = document.getElementById('time-markers-container');
+                this.visibilityControls = document.getElementById('visibility-controls');
+                this.masterMuteBtn = document.getElementById('master-mute-btn');
+                this.videoPlayer = document.getElementById('video-player');
+            }
+
+            setupConstants() {
+                this.SIMULATION_SPEED_MULTIPLIER = 120;
+                this.START_HOUR = 8;
+                this.START_MINUTE = 25;
+                this.SIMULATION_START_TIME_OFFSET_MS = (this.START_HOUR * 3600 + this.START_MINUTE * 60) * 1000;
+                this.YAMAHOKO_TITLES = { "長刀鉾": "01 くじ取らず", "油天神山": "02 山一番", "伯牙山": "03 山二番", "白楽天山": "04 山三番", "函谷鉾": "05 くじ取らず", "山伏山": "06 山四番", "綾傘鉾": "07 傘一番", "保昌山": "08 山五番", "鶏鉾": "09 鉾一番", "霰天神山": "10 山六番", "芦刈山": "11 山七番", "孟宗山": "12 山八番", "月鉾": "13 鉾二番", "太子山": "14 山九番", "四条傘鉾": "15 傘二番", "蟷螂山": "16 山十番", "菊水鉾": "17 鉾三番", "木賊山": "18 山十一番", "郭巨山": "19 山十二番", "占出山": "20 山十三番", "放下鉾": "21 くじ取らず", "岩戸山": "22 くじ取らず", "船鉾": "23 くじ取らず" };
+            }
+            
+            setupState() {
+                this.relayPoints = {}; this.yamahokoData = [];
+                this.yamahokoMeshes = []; this.yamahokoLabels = []; this.pointLabels = [];
+                this.visibilityToggleButtons = [];
+                this.lastTime = 0; this.simulationClockTimeMs = 0;
+                this.animationFrameId = null; this.simulationEndTimeMs = 0;
+                this.isPaused = true; this.wasPlayingBeforeSeek = false;
+                this.isGloballyMuted = true;
+                
+                this.interactiveMeshes = [];
+                this.interactiveBuildingGroup = new THREE.Group();
+                this.customBuildingMaterial = null;
+                this.buildingAttributes = {};
+            }
+
+            setupLights() {
+                this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+                const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                keyLight.position.set(5, 5, 8);
+                const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+                fillLight.position.set(-5, 2, 4);
+                const backLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                backLight.position.set(0, 10, -10);
+                this.scene.add(keyLight, fillLight, backLight);
+            }
+
+            async loadInitialData() {
+                try {
+                    const [relayRes, yamahokoRes, buildingAttrRes] = await Promise.all([
+                        fetch('Relay_point.json'),
+                        fetch('yamahoko2.json'),
+                        fetch('../gion_asset/merged_merged_output.json'),
+                        this.loadAllModels()
+                    ]);
+
+                    if (!relayRes.ok) throw new Error(`Relay_point.json: ${relayRes.statusText}`);
+                    if (!yamahokoRes.ok) throw new Error(`yamahoko2.json: ${yamahokoRes.statusText}`);
+                    if (!buildingAttrRes.ok) throw new Error(`merged_merged_output.json: ${buildingAttrRes.statusText}`);
+                    
+                    const relayData = await relayRes.json();
+                    this.yamahokoData = await yamahokoRes.json();
+                    const buildingAttrData = await buildingAttrRes.json();
+
+                    buildingAttrData.forEach(attr => {
+                        // ▼▼▼ 【修正点】'sequential_id'と'serial_number'の両方に対応 ▼▼▼
+                        const key = attr.sequential_id || attr.serial_number;
+                        if (key) {
+                            this.buildingAttributes[key] = attr;
+                        }
+                    });
+
+                    relayData.forEach(p => {
+                        if(p.location && p.location.x && p.location.y && p.location.z) {
+                           this.relayPoints[p.name] = new THREE.Vector3(parseFloat(p.location.x), parseFloat(p.location.z), -parseFloat(p.location.y));
+                        }
+                    });
+
+                    this.initializeSceneObjects();
+                    this.setupUI();
+                    
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    this.updateSceneToTime(this.SIMULATION_START_TIME_OFFSET_MS);
+                    this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+
+                } catch (error) {
+                    console.error('初期データ読み込みエラー:', error);
+                    document.getElementById('loading-message').textContent = 'データの読み込みに失敗しました。';
+                }
+            }
+            
+            async loadAllModels() {
+                const loader = new GLTFLoader();
+                const sceneryModelPath = '../gion_asset/tran_3.glb';
+                const interactiveModelPaths = [
+                    '../gion_asset/bld52353690_3.glb', '../gion_asset/bld52353691_3.glb',
+                    '../gion_asset/bld52354600_3.glb', '../gion_asset/bld52354601_3.glb',
+                    '../gion_asset/bld52354610_3.glb', '../gion_asset/bld52354611_3.glb',
+                ];
+
+                this.customBuildingMaterial = this.createCustomMaterial();
+
+                const sceneryPromise = loader.loadAsync(sceneryModelPath).then(gltf => {
+                    const model = gltf.scene;
+                    model.traverse(child => {
+                        if (child.isMesh) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: 0xffff00,
+                                clippingPlanes: this.clippingPlanes,
+                                clipIntersection: false
+                            });
+                        }
+                    });
+                    this.scene.add(model);
+                }).catch(e => console.error(`Failed to load ${sceneryModelPath}`, e));
+
+                const interactivePromises = interactiveModelPaths.map(path => loader.loadAsync(path).catch(e => {
+                    console.error(`Failed to load ${path}`, e);
+                    return null;
+                }));
+                
+                const interactiveGltfs = await Promise.all(interactivePromises);
+                interactiveGltfs.forEach(gltf => {
+                    if(!gltf) return;
+                    const model = gltf.scene;
+                    model.traverse(object => {
+                        if (object.isMesh) {
+                            object.material = this.customBuildingMaterial;
+                            this.interactiveMeshes.push(object);
+                        }
+                    });
+                    this.interactiveBuildingGroup.add(model);
+                });
+                this.scene.add(this.interactiveBuildingGroup);
+
+                await sceneryPromise;
+                console.log('全てのモデル読み込み完了');
+            }
+
+            initializeSceneObjects() {
+                this.addStandardObjects();
+                this.addYamahokoObjects();
+            }
+
+            setupUI() {
+                this.calculateSimulationEndTime();
+                this.setupControls();
+                this.setupMasterMute();
+                this.setupVisibilityControls();
+                this.setupClickEvents();
+                this.adjustCameraToFitAll();
+            }
+            
+            timeToMsOffset = (timeStr) => {
+                 if (typeof timeStr !== 'string' || !timeStr.includes(':')) return NaN;
+                 const parts = timeStr.split(':').map(Number);
+                 if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                     return (parts[0] * 3600 + parts[1] * 60) * 1000;
+                 }
+                 return NaN;
+            };
+
+            updateTimeDisplay = (currentSimTimeOffsetMs) => {
+                 const totalSeconds = Math.floor(Math.max(0, currentSimTimeOffsetMs) / 1000);
+                 if (isNaN(totalSeconds)) return;
+                 const hours = Math.floor(totalSeconds / 3600) % 24;
+                 const minutes = Math.floor((totalSeconds % 3600) / 60);
+                 const seconds = totalSeconds % 60;
+                 const formattedTime = `${String(hours).padStart(2, '0')}時${String(minutes).padStart(2, '0')}分${String(seconds).padStart(2, '0')}秒`;
+                 this.timeDisplay.textContent = formattedTime;
+            };
+
+            calculateSimulationEndTime = () => {
+                 let maxEndTimeMs = 0;
+                 this.yamahokoData.forEach(yamanoko => {
+                     if (yamanoko.position && yamanoko.position.length > 0) {
+                         const lastTimeStr = Object.values(yamanoko.position[yamanoko.position.length - 1])[0];
+                         const endTimeMs = this.timeToMsOffset(lastTimeStr);
+                         if (!isNaN(endTimeMs)) maxEndTimeMs = Math.max(maxEndTimeMs, endTimeMs);
+                     }
+                 });
+                 this.simulationEndTimeMs = maxEndTimeMs; 
+            };
+
+            createTimeMarkers = () => {
+                 this.timeMarkersContainer.innerHTML = '';
+                 const markerStartTime = this.timeToMsOffset('08:30');
+                 const interval = 30 * 60 * 1000;
+                 const totalRange = this.simulationEndTimeMs - this.SIMULATION_START_TIME_OFFSET_MS;
+
+                 if (totalRange <= 0) return;
+
+                 for (let time = markerStartTime; time <= this.simulationEndTimeMs; time += interval) {
+                     const percent = ((time - this.SIMULATION_START_TIME_OFFSET_MS) / totalRange) * 100;
+                     if (percent >= 0 && percent <= 100) {
+                         const marker = document.createElement('div');
+                         marker.className = 'time-marker';
+                         const hours = Math.floor(time / 3600000) % 24;
+                         const minutes = Math.floor((time % 3600000) / 60000);
+                         marker.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                         marker.style.left = `${percent}%`;
+                         this.timeMarkersContainer.appendChild(marker);
+                     }
+                 }
+            };
+            
+            setupControls = () => {
+                 this.seekBar.min = this.SIMULATION_START_TIME_OFFSET_MS;
+                 this.seekBar.max = this.simulationEndTimeMs;
+                 this.seekBar.value = this.SIMULATION_START_TIME_OFFSET_MS;
+                 
+                 this.createTimeMarkers();
+
+                 this.playPauseBtn.addEventListener('click', () => {
+                     this.isPaused = !this.isPaused;
+                     this.playPauseBtn.textContent = this.isPaused ? '再生' : '一時停止';
+                     if (!this.isPaused) {
+                         this.lastTime = performance.now();
+                     }
+                 });
+
+                 this.seekBar.addEventListener('mousedown', () => {
+                     this.wasPlayingBeforeSeek = !this.isPaused;
+                     this.isPaused = true;
+                     this.playPauseBtn.textContent = '再生';
+                 });
+
+                 this.seekBar.addEventListener('input', () => {
+                     const seekTime = parseFloat(this.seekBar.value);
+                     this.simulationClockTimeMs = seekTime - this.SIMULATION_START_TIME_OFFSET_MS;
+                     this.updateSceneToTime(seekTime);
+                 });
+
+                 this.seekBar.addEventListener('change', () => {
+                     if (this.wasPlayingBeforeSeek) {
+                         this.isPaused = false;
+                         this.playPauseBtn.textContent = '一時停止';
+                         this.lastTime = performance.now();
+                     }
+                 });
+            };
+            
+            setupMasterMute = () => {
+                 this.masterMuteBtn.addEventListener('click', () => {
+                     this.isGloballyMuted = !this.isGloballyMuted;
+                     this.videoPlayer.muted = this.isGloballyMuted;
+                     this.masterMuteBtn.textContent = this.isGloballyMuted ? '音声オン' : '消音';
+                 });
+            };
+
+            createGroundPlaneTexture = () => {
+                 const canvas = document.createElement('canvas');
+                 const context = canvas.getContext('2d');
+                 const size = 512;
+                 canvas.width = size;
+                 canvas.height = size;
+                 const centerX = size / 2, centerY = size / 2, radius = size / 2;
+                 const gradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+                 const darkBrown = '#403020';
+                 gradient.addColorStop(0, darkBrown);
+                 gradient.addColorStop(1, 'rgba(64, 48, 32, 0)');
+                 context.fillStyle = gradient;
+                 context.fillRect(0, 0, size, size);
+                 return new THREE.CanvasTexture(canvas);
+            };
+
+            updateYamahokoLabels = () => {
+                 const _vector = new THREE.Vector3();
+                 this.yamahokoLabels.forEach(item => {
+                     const mesh = item.mesh, label = item.label;
+                     if (!mesh.visible) {
+                         label.style.display = 'none';
+                         return;
+                     }
+                     mesh.updateWorldMatrix(true, false);
+                     _vector.setFromMatrixPosition(mesh.matrixWorld);
+                     _vector.y += 10;
+                     _vector.project(this.camera);
+                     const isBehind = _vector.z > 1;
+                     label.style.display = isBehind ? 'none' : 'block';
+                     if (!isBehind) {
+                         const x = (_vector.x * .5 + .5) * this.renderer.domElement.clientWidth;
+                         const y = (-_vector.y * .5 + .5) * this.renderer.domElement.clientHeight;
+                         label.style.left = `${x}px`;
+                         label.style.top = `${y}px`;
+                     }
+                 });
+            };
+
+            updatePointLabels = () => {
+                 const _vector = new THREE.Vector3();
+                 this.pointLabels.forEach(item => {
+                     const point3D = item.position, label = item.label;
+                     _vector.copy(point3D).project(this.camera);
+                     const isBehind = _vector.z > 1;
+                     label.style.display = isBehind ? 'none' : 'block';
+                     if (!isBehind) {
+                         const x = (_vector.x * .5 + .5) * this.renderer.domElement.clientWidth;
+                         const y = (-_vector.y * .5 + .5) * this.renderer.domElement.clientHeight;
+                         label.style.left = `${x}px`;
+                         label.style.top = `${y}px`;
+                     }
+                 });
+            };
+            
+            animate = (currentTime) => {
+                 this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+                 this.controls.update();
+                 if (this.isPaused) {
+                     this.updateYamahokoLabels();
+                     this.updatePointLabels();
+                     this.renderer.render(this.scene, this.camera);
+                     return;
+                 }
+                 if (this.lastTime === 0) this.lastTime = currentTime;
+                 let deltaTime = currentTime - this.lastTime;
+                 this.lastTime = currentTime;
+                 if (isNaN(deltaTime) || deltaTime <= 0) return;
+                 this.simulationClockTimeMs += deltaTime * this.SIMULATION_SPEED_MULTIPLIER;
+                 const finalSimTimeOffsetMs = this.SIMULATION_START_TIME_OFFSET_MS + this.simulationClockTimeMs;
+                 if (finalSimTimeOffsetMs >= this.simulationEndTimeMs) {
+                     this.isPaused = true;
+                     this.playPauseBtn.textContent = '再生';
+                     this.seekBar.value = this.simulationEndTimeMs;
+                     this.updateSceneToTime(this.simulationEndTimeMs);
+                     return;
+                 }
+                 this.seekBar.value = finalSimTimeOffsetMs;
+                 this.updateSceneToTime(finalSimTimeOffsetMs);
+            };
+
+            updateSceneToTime = (finalSimTimeOffsetMs) => {
+                 this.yamahokoMeshes.forEach(yamanokoObj => {
+                     const yamanoko = yamanokoObj.data;
+                     const mesh = yamanokoObj.mesh;
+                     if (!yamanoko.position || yamanoko.position.length < 2) return;
+                     let foundSegment = false;
+                     for (let i = 0; i < yamanoko.position.length - 1; i++) {
+                         const startPointEntry = yamanoko.position[i];
+                         const endPointEntry = yamanoko.position[i + 1];
+                         const startPointName = Object.keys(startPointEntry)[0];
+                         const endPointName = Object.keys(endPointEntry)[0];
+                         const startTimeOffsetMs = this.timeToMsOffset(Object.values(startPointEntry)[0]);
+                         const endTimeOffsetMs = this.timeToMsOffset(Object.values(endPointEntry)[0]);
+                         if (isNaN(startTimeOffsetMs) || isNaN(endTimeOffsetMs) || startTimeOffsetMs >= endTimeOffsetMs) continue;
+                         if (finalSimTimeOffsetMs >= startTimeOffsetMs && finalSimTimeOffsetMs <= endTimeOffsetMs) {
+                             foundSegment = true;
+                             const segmentDurationMs = endTimeOffsetMs - startTimeOffsetMs;
+                             const elapsedInSegmentMs = finalSimTimeOffsetMs - startTimeOffsetMs;
+                             let t = segmentDurationMs === 0 ? 0 : elapsedInSegmentMs / segmentDurationMs;
+                             t = Math.max(0, Math.min(1, t));
+                             if (this.relayPoints[startPointName] && this.relayPoints[endPointName]) {
+                                 mesh.position.lerpVectors(this.relayPoints[startPointName], this.relayPoints[endPointName], t);
+                             }
+                             break;
+                         }
+                     }
+                     if (!foundSegment) {
+                         const firstPointTimeOffsetMs = this.timeToMsOffset(Object.values(yamanoko.position[0])[0]);
+                         const lastPointTimeOffsetMs = this.timeToMsOffset(Object.values(yamanoko.position[yamanoko.position.length - 1])[0]);
+                         if (isNaN(firstPointTimeOffsetMs) || isNaN(lastPointTimeOffsetMs)) return;
+                         if (finalSimTimeOffsetMs < firstPointTimeOffsetMs && this.relayPoints[Object.keys(yamanoko.position[0])[0]]) {
+                             mesh.position.copy(this.relayPoints[Object.keys(yamanoko.position[0])[0]]);
+                         } else if (finalSimTimeOffsetMs > lastPointTimeOffsetMs && this.relayPoints[Object.keys(yamanoko.position[yamanoko.position.length - 1])[0]]) {
+                             mesh.position.copy(this.relayPoints[Object.keys(yamanoko.position[yamanoko.position.length - 1])[0]]);
+                         }
+                     }
+                 });
+                 this.updateTimeDisplay(finalSimTimeOffsetMs);
+                 this.updateYamahokoLabels();
+                 this.updatePointLabels();
+                 this.renderer.render(this.scene, this.camera);
+            };
+
+            addStandardObjects() {
+                const groundTexture = this.createGroundPlaneTexture();
+                const groundMaterial = new THREE.MeshBasicMaterial({ map: groundTexture, transparent: true, polygonOffset: true, polygonOffsetFactor: 3.5, polygonOffsetUnits: 3.5 });
+                const groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), groundMaterial);
+                groundPlane.rotation.x = -Math.PI / 2;
+                this.scene.add(groundPlane);
+                
+                const planeGeometry = new THREE.PlaneGeometry(1800, 1200);
+                const videoTexture = new THREE.VideoTexture(this.videoPlayer);
+                const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture });
+                this.videoPlane = new THREE.Mesh(planeGeometry, videoMaterial);
+                this.videoPlane.position.set(0, 605, -800);
+                this.videoPlane.name = "video_plane";
+                this.scene.add(this.videoPlane);
+                this.videoPlayer.addEventListener('loadedmetadata', () => this.adjustVideoTexture(this.videoPlane));
+                this.videoPlayer.play().catch(e => console.error("動画の自動再生に失敗:", e));
+            }
+            
+            addYamahokoObjects() {
+                const geometry = new THREE.BoxGeometry(20, 20, 20);
+                const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                this.yamahokoData.forEach(y => {
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.name = y.name;
+                    this.scene.add(mesh);
+                    this.yamahokoMeshes.push({ data: y, mesh: mesh });
+                    if (y.position && y.position.length > 0) {
+                        const firstPoint = this.relayPoints[Object.keys(y.position[0])[0]];
+                        if (firstPoint) mesh.position.copy(firstPoint);
+                    }
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'yamahoko-label';
+                    labelDiv.textContent = y.name;
+                    document.body.appendChild(labelDiv);
+                    this.yamahokoLabels.push({ mesh: mesh, label: labelDiv });
+                });
+                for (const pointName in this.relayPoints) {
+                    if (!pointName.includes('基位置')) {
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = 'point-label';
+                        labelDiv.textContent = pointName;
+                        document.body.appendChild(labelDiv);
+                        this.pointLabels.push({ position: this.relayPoints[pointName], label: labelDiv });
+                    }
+                }
+            }
+
+            adjustVideoTexture = (plane) => {
+                 const planeAspectRatio = plane.geometry.parameters.width / plane.geometry.parameters.height;
+                 const videoAspectRatio = this.videoPlayer.videoWidth / this.videoPlayer.videoHeight;
+                 const texture = plane.material.map;
+                 if (planeAspectRatio > videoAspectRatio) {
+                     texture.repeat.x = 1;
+                     texture.repeat.y = videoAspectRatio / planeAspectRatio;
+                     texture.offset.x = 0;
+                     texture.offset.y = (1 - texture.repeat.y) / 2;
+                 } else {
+                     texture.repeat.x = planeAspectRatio / videoAspectRatio;
+                     texture.repeat.y = 1;
+                     texture.offset.x = (1 - texture.repeat.x) / 2;
+                     texture.offset.y = 0;
+                 }
+            };
+            
+            setupVisibilityControls = () => {
+                 const masterControlsContainer = document.createElement('div');
+                 masterControlsContainer.id = 'master-visibility-controls';
+                 const showAllBtn = document.createElement('button');
+                 showAllBtn.textContent = 'すべて表示';
+                 showAllBtn.className = 'master-btn';
+                 showAllBtn.addEventListener('click', () => {
+                     this.yamahokoMeshes.forEach(item => item.mesh.visible = true);
+                     this.visibilityToggleButtons.forEach(btn => btn.textContent = '非表示');
+                 });
+                 const hideAllBtn = document.createElement('button');
+                 hideAllBtn.textContent = 'すべて非表示';
+                 hideAllBtn.className = 'master-btn';
+                 hideAllBtn.addEventListener('click', () => {
+                     this.yamahokoMeshes.forEach(item => item.mesh.visible = false);
+                     this.visibilityToggleButtons.forEach(btn => btn.textContent = '表示');
+                 });
+                 masterControlsContainer.appendChild(showAllBtn);
+                 masterControlsContainer.appendChild(hideAllBtn);
+                 this.visibilityControls.appendChild(masterControlsContainer);
+                 this.yamahokoData.sort((a, b) => {
+                     const titleA = this.YAMAHOKO_TITLES[a.name] || '';
+                     const titleB = this.YAMAHOKO_TITLES[b.name] || '';
+                     return titleA.localeCompare(titleB, 'ja', { numeric: true });
+                 }).forEach(yamanoko => {
+                     const item = this.yamahokoMeshes.find(m => m.data.name === yamanoko.name);
+                     if (!item) return;
+                     const mesh = item.mesh;
+                     const controlContainer = document.createElement('div');
+                     controlContainer.className = 'visibility-item';
+                     const nameContainer = document.createElement('div');
+                     nameContainer.className = 'name-container';
+                     const rankSpan = document.createElement('span');
+                     rankSpan.className = 'rank-column';
+                     rankSpan.textContent = this.YAMAHOKO_TITLES[yamanoko.name] || '';
+                     const nameSpan = document.createElement('span');
+                     nameSpan.className = 'name-column';
+                     nameSpan.textContent = yamanoko.name;
+                     nameContainer.appendChild(rankSpan);
+                     nameContainer.appendChild(nameSpan);
+                     const toggleButton = document.createElement('button');
+                     toggleButton.className = 'visibility-toggle-btn';
+                     toggleButton.textContent = '非表示';
+                     this.visibilityToggleButtons.push(toggleButton);
+                     controlContainer.appendChild(nameContainer);
+                     controlContainer.appendChild(toggleButton);
+                     this.visibilityControls.appendChild(controlContainer);
+                     toggleButton.addEventListener('click', () => {
+                         mesh.visible = !mesh.visible;
+                         toggleButton.textContent = mesh.visible ? '非表示' : '表示';
+                     });
+                 });
+            };
+            
+            setupClickEvents() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+
+                window.addEventListener('dblclick', (event) => {
+                    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    
+                    const buildingIntersects = this.raycaster.intersectObjects(this.interactiveMeshes);
+                    if (buildingIntersects.length > 0) {
+                        this.handleBuildingClick(buildingIntersects[0]);
+                        return;
+                    } else {
+                        if (this.customBuildingMaterial) {
+                           this.customBuildingMaterial.uniforms.uSelectedID.value = -1.0;
+                        }
+                        this.buildingInfoDisplay.textContent = 'モデルをダブルクリックしてください';
+                    }
+
+                    if (this.videoPlane) {
+                        const videoIntersects = this.raycaster.intersectObject(this.videoPlane);
+                        if (videoIntersects.length > 0) {
+                            this.handleVideoClick();
+                        }
+                    }
+                });
+            }
+
+            // ▼▼▼ 【修正箇所】GmlID表示と、建築年"0001"の「不明」表示に対応 ▼▼▼
+            handleBuildingClick(intersection) {
+                const idAttribute = intersection.object.geometry.attributes._id;
+                if (idAttribute) {
+                    const clickedID = idAttribute.getX(intersection.face.a);
+                    this.customBuildingMaterial.uniforms.uSelectedID.value = clickedID;
+                    
+                    const attributes = this.buildingAttributes[clickedID];
+                    if (attributes) {
+                        let infoText = `ID: ${clickedID}\n`;
+                        infoText += `GmlID: ${attributes.id || '不明'}\n`;
+                        
+                        const year = (attributes.yearOfConstruction === "0001" || !attributes.yearOfConstruction) 
+                                     ? '不明' 
+                                     : `${attributes.yearOfConstruction}年`;
+                        infoText += `建築年：${year}\n`;
+
+                        infoText += `計測高さ：${attributes.measuredHeight !== null ? attributes.measuredHeight + 'm' : '不明'}\n`;
+                        infoText += `地上階数：${attributes.storeysAboveGround !== null ? attributes.storeysAboveGround : '不明'}\n`;
+                        infoText += `地下階数：${attributes.storeysBelowGround !== null ? attributes.storeysBelowGround : '不明'}\n`;
+                        
+                        const usage = attributes.usage_jp || attributes.usage || '不明';
+                        const structure = attributes.buildingStructureType_jp || attributes.buildingStructureType || '不明';
+                        
+                        infoText += `用途：${usage}\n`;
+                        infoText += `構造種別：${structure}`;
+                        
+                        this.buildingInfoDisplay.textContent = infoText;
+                    } else {
+                        this.buildingInfoDisplay.textContent = `ID: ${clickedID}\n(詳細情報なし)`;
+                    }
+
+                } else {
+                    this.buildingInfoDisplay.textContent = 'エラー: ID属性がありません。';
+                }
+            }
+
+            handleVideoClick() {
+                if (this.videoPlayer.paused) {
+                    this.videoPlayer.play();
+                } else {
+                    this.videoPlayer.pause();
+                }
+            }
+
+            adjustCameraToFitAll() {
+                const bbox = new THREE.Box3();
+                
+                if (Object.keys(this.relayPoints).length > 0) {
+                    Object.values(this.relayPoints).forEach(p => {
+                       if(p instanceof THREE.Vector3) bbox.expandByPoint(p)
+                    });
+                }
+                if (this.interactiveBuildingGroup.children.length > 0) {
+                    bbox.expandByObject(this.interactiveBuildingGroup);
+                }
+                if (this.videoPlane) {
+                    bbox.expandByObject(this.videoPlane);
+                }
+
+                if (bbox.isEmpty()){
+                     console.warn("Bounding box is empty, cannot adjust camera.");
+                     return;
+                }
+
+                const center = new THREE.Vector3(), size = new THREE.Vector3();
+                bbox.getCenter(center);
+                bbox.getSize(size);
+                
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = this.camera.fov * (Math.PI / 180);
+                const distance = Math.abs(maxDim / Math.tan(fov / 2)) * 0.7;
+
+                this.camera.position.set(center.x, center.y + size.y * 0.5, center.z + distance);
+                this.camera.lookAt(center);
+                this.controls.target.copy(center);
+                this.controls.update();
+            }
+
+            createCustomMaterial() {
+                const vertexShader = document.getElementById('vertexShader').textContent;
+                const fragmentShader = document.getElementById('fragmentShader').textContent;
+                return new THREE.ShaderMaterial({
+                    vertexShader, fragmentShader,
+                    uniforms: {
+                        uSelectedID: { value: -1.0 },
+                        uBaseColor: { value: new THREE.Color(0xffffff) },
+                        uHighlightColor: { value: new THREE.Color(0x007bff) },
+                    }
+                });
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            new GionSimulationApp();
+        });
+    </script>
+</body>
+</html>
