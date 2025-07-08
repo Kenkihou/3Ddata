@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js - 2 GLB Loader with OrbitControls</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // 1. シーンの作成
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xeeeeee);
+
+        // 2. カメラの作成
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // 2つのモデルが見えるようにカメラの位置を少し後ろに調整
+        camera.position.set(0, 1.5, 8); 
+
+        // 3. レンダラーの作成
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // 4. ライトの追加
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(1, 2, 1);
+        scene.add(directionalLight);
+
+        // 5. OrbitControls の設定
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 2;
+        controls.maxDistance = 20; // 最大距離を少し延長
+        controls.maxPolarAngle = Math.PI / 1.5; // 縦方向の角度を少し広げる
+
+        // 6. GLBモデルの読み込み
+        const loader = new GLTFLoader();
+
+        // 白虎モデルの読み込み
+        loader.load(
+            '白虎test.glb',
+            (gltf) => {
+                const byakko = gltf.scene;
+                // モデルを左側に配置
+                byakko.position.z = -0.5;
+                byakko.position.y = -2.5;
+                scene.add(byakko);
+                console.log('白虎モデルの読み込みに成功しました。');
+            },
+            undefined, // progress callbackは今回は使用しない
+            (error) => {
+                console.error('白虎モデルの読み込み中にエラーが発生しました:', error);
+            }
+        );
+
+        // 朱雀モデルの読み込み
+        loader.load(
+            '朱雀test.glb',
+            (gltf) => {
+                const suzaku = gltf.scene;
+                // モデルを右側に配置
+                suzaku.position.z = 0.5;
+                suzaku.position.y = 2.5;
+                scene.add(suzaku);
+                console.log('朱雀モデルの読み込みに成功しました。');
+            },
+            undefined, // progress callbackは今回は使用しない
+            (error) => {
+                console.error('朱雀モデルの読み込み中にエラーが発生しました:', error);
+            }
+        );
+
+        // 7. アニメーションループ
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // 8. ウィンドウリサイズへの対応
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>
