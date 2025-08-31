@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <title>Nagaginoboko Path Animation</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body { margin: 0; font-family: sans-serif; overflow: hidden; background-color: #111; color: #fff; }
+        #container { width: 100vw; height: 100vh; }
+        .label {
+            color: #FFFF00; font-size: 14px; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+            white-space: nowrap; /* ★ 地名が改行されないようにする */
+        }
+        #time-display { position: absolute; top: 10px; left: 10px; color: white; font-size: 24px; font-family: monospace; text-shadow: 2px 2px 4px #000000; }
+        .speech-bubble {
+            position: relative; background: rgba(255, 255, 255, 0.9); color: #000; border-radius: .4em; padding: 8px 12px;
+            font-size: 16px; font-weight: bold; white-space: nowrap; opacity: 0; transition: opacity 0.2s;
+            pointer-events: none; z-index: 999;
+        }
+        .speech-bubble.visible { opacity: 1; }
+        .speech-bubble::after {
+            content: ''; position: absolute; bottom: 0; left: 50%; width: 0; height: 0; border: 12px solid transparent;
+            border-top-color: rgba(255, 255, 255, 0.9); border-bottom: 0; margin-left: -12px; margin-bottom: -12px;
+        }
+        #playback-controls {
+            position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(0, 0, 0, 0.5);
+            display: flex; align-items: center; padding: 10px 20px; box-sizing: border-box; height: 60px;
+        }
+        #play-pause-btn {
+            background: none; border: 2px solid white; color: white; font-size: 16px;
+            cursor: pointer; width: 90px; height: 35px; margin-right: 20px;
+        }
+        #seek-bar-container { flex-grow: 1; position: relative; height: 100%; }
+        #seek-bar { width: 100%; cursor: pointer; position: absolute; bottom: 25px; }
+        #seek-ticks { position: absolute; bottom: 5px; width: 100%; height: 20px; pointer-events: none; }
+        #seek-ticks span { position: absolute; color: white; font-size: 12px; transform: translateX(-50%); }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="time-display">08:30:00</div>
+    <div id="playback-controls">
+        <button id="play-pause-btn">再生</button>
+        <div id="seek-bar-container">
+            <input type="range" id="seek-bar" value="0">
+            <div id="seek-ticks"></div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // (グローバル変数の定義は変更ありません)
+        let scene, camera, renderer, labelRenderer, controls;
+        let nagaginobokoModel, animationPath, pathTotalLength;
+        let clock = new THREE.Clock();
+        let timetableKeyframes = [], cornerTurnEvents = [];
+        const timeScale = 100, timeOffset = 8 * 3600, startTime = 30 * 60, finalTime = 5 * 3600;
+        let loopEndTime, currentSimTime = startTime, timeDisplay, tsujimawashiLabelDiv, kujiaratameLabelDiv;
+        let isPlaying = false, isSeeking = false, playPauseBtn, seekBar;
+
+        init();
+
+        function init() {
+            const container = document.getElementById('container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000);
+            
+            // ★ 3. 初期カメラの位置（方角）を変更
+            camera.position.set(20, 20, 20); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            container.appendChild(labelRenderer.domElement);
+            controls = new OrbitControls(camera, labelRenderer.domElement);
+            controls.enableDamping = true;
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+            timeDisplay = document.getElementById('time-display');
+            playPauseBtn = document.getElementById('play-pause-btn');
+            seekBar = document.getElementById('seek-bar');
+            playPauseBtn.addEventListener('click', togglePlayPause);
+            seekBar.addEventListener('input', onSeekBarInput);
+            seekBar.addEventListener('mousedown', () => { isSeeking = true; });
+            seekBar.addEventListener('mouseup', () => { isSeeking = false; });
+
+            // ★ 1. ウィンドウリサイズへの対応 (既に対応済みですが、リスナーをここに配置)
+            window.addEventListener('resize', onWindowResize);
+
+            loadAssets();
+        }
+
+        async function loadAssets() {
+            // (loadAssets関数は変更ありません)
+            const gltfLoader = new GLTFLoader();
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/gltf/');
+            gltfLoader.setDRACOLoader(dracoLoader);
+            const fileLoader = new THREE.FileLoader();
+            try {
+                const [pathGltf, modelGltf, timetableJson] = await Promise.all([
+                    gltfLoader.loadAsync('./長刀鉾パス.glb'),
+                    gltfLoader.loadAsync('./長刀鉾.glb'),
+                    fileLoader.loadAsync('./長刀鉾時刻表.json')
+                ]);
+                setupScene(pathGltf, modelGltf, JSON.parse(timetableJson));
+            } catch (error) { console.error('アセットの読み込みに失敗しました。', error); }
+        }
+        
+        function setupScene(pathGltf, modelGltf, timetableData) {
+            timetableKeyframes = timetableData.filter(d => d.time !== null);
+            loopEndTime = timetableKeyframes[timetableKeyframes.length - 1].time;
+            seekBar.min = startTime;
+            seekBar.max = finalTime;
+            seekBar.value = currentSimTime;
+            createTicks();
+            const keyframes = timetableKeyframes;
+            for (let i = 0; i <= keyframes.length - 4; i++) {
+                const kf1 = keyframes[i], kf2 = keyframes[i+1], kf3 = keyframes[i+2], kf4 = keyframes[i+3];
+                if (kf1.name === kf2.name && kf1.name === kf3.name && kf1.name === kf4.name && kf1.distance === kf2.distance && kf1.distance === kf3.distance && kf1.distance === kf4.distance) {
+                    cornerTurnEvents.push({ name: kf1.name, distance: kf1.distance, keyframes: [kf1, kf2, kf3, kf4] });
+                    i += 3; 
+                }
+            }
+            const pathModel = pathGltf.scene;
+            scene.add(pathModel);
+
+            const pathPoints = [];
+            // ★ 2. 地名ラベル表示のための準備 (頂点の累積距離を計算)
+            const cumulativeDistances = [0];
+
+            pathModel.traverse((object) => {
+                if (object.isLine) {
+                    object.material.color.set(0x00ffff);
+                    const positionAttribute = object.geometry.attributes.position;
+                    for (let i = 0; i < positionAttribute.count; i++) {
+                        const vertex = new THREE.Vector3().fromBufferAttribute(positionAttribute, i);
+                        object.updateWorldMatrix(true, false);
+                        vertex.applyMatrix4(object.matrixWorld);
+                        pathPoints.push(vertex);
+
+                        // 累積距離を計算
+                        if (i > 0) {
+                            const prevVertex = pathPoints[i-1];
+                            const dist = vertex.distanceTo(prevVertex);
+                            cumulativeDistances.push(cumulativeDistances[i-1] + dist);
+                        }
+                    }
+                }
+            });
+
+            // ★ 2. 地名と番号のラベルを生成
+            createPathLabels(pathPoints, cumulativeDistances, timetableData);
+
+            if (pathPoints.length > 1) {
+               animationPath = new THREE.CurvePath();
+               for (let i = 0; i < pathPoints.length - 1; i++) {
+                   animationPath.add(new THREE.LineCurve3(pathPoints[i], pathPoints[i + 1]));
+               }
+               animationPath.add(new THREE.LineCurve3(pathPoints[pathPoints.length - 1], pathPoints[0]));
+               pathTotalLength = animationPath.getLength();
+            }
+            nagaginobokoModel = modelGltf.scene;
+            nagaginobokoModel.scale.set(5, 5, 5);
+            scene.add(nagaginobokoModel);
+            
+            tsujimawashiLabelDiv = document.createElement('div');
+            tsujimawashiLabelDiv.className = 'speech-bubble';
+            tsujimawashiLabelDiv.textContent = '辻回し中';
+            const tsujimawashiLabel = new CSS2DObject(tsujimawashiLabelDiv);
+            tsujimawashiLabel.position.set(0, 30, 0); 
+            nagaginobokoModel.add(tsujimawashiLabel);
+
+            kujiaratameLabelDiv = document.createElement('div');
+            kujiaratameLabelDiv.className = 'speech-bubble';
+            kujiaratameLabelDiv.textContent = 'くじ改め中！';
+            const kujiaratameLabel = new CSS2DObject(kujiaratameLabelDiv);
+            kujiaratameLabel.position.set(0, 30, 0);
+            nagaginobokoModel.add(kujiaratameLabel);
+
+            fitCameraToSelection(pathModel, 1.3, controls);
+            animate();
+        }
+        
+        // ★ 2. ラベルを生成するための新しい関数
+        function createPathLabels(points, distances, timetable) {
+            const nameMap = new Map();
+            const targetNames = ["四条堺町", "四条麩屋町", "四条河原町", "河原町六角", "河原町三条", "河原町御池", "烏丸御池", "新町御池", "四条新町"];
+            
+            // タイムテーブルから地名と距離の対応表を作成
+            const uniqueLocations = new Map();
+            timetable.forEach(entry => {
+                if (targetNames.includes(entry.name) && !uniqueLocations.has(entry.name)) {
+                    uniqueLocations.set(entry.name, entry.distance);
+                }
+            });
+
+            // 各地名に最も近い頂点を探す
+            uniqueLocations.forEach((distance, name) => {
+                let closestDist = Infinity;
+                let closestIndex = -1;
+                distances.forEach((d, index) => {
+                    if (Math.abs(d - distance) < closestDist) {
+                        closestDist = Math.abs(d - distance);
+                        closestIndex = index;
+                    }
+                });
+                // 距離が非常に近い頂点に地名を割り当てる (許容誤差は5)
+                if (closestIndex !== -1 && closestDist < 5) {
+                    nameMap.set(closestIndex, name);
+                }
+            });
+
+            // 全ての頂点に対してラベルを生成
+            points.forEach((point, i) => {
+                const labelDiv = document.createElement('div');
+                labelDiv.className = 'label';
+                // 地名が割り当てられていれば地名を、なければ番号を表示
+                labelDiv.textContent = nameMap.has(i) ? nameMap.get(i) : i + 1;
+                const label = new CSS2DObject(labelDiv);
+                label.position.copy(point);
+                scene.add(label);
+            });
+        }
+
+        function togglePlayPause() { isPlaying = !isPlaying; playPauseBtn.textContent = isPlaying ? '一時停止' : '再生'; }
+        function onSeekBarInput() { currentSimTime = parseFloat(seekBar.value); if (currentSimTime > loopEndTime) { currentSimTime = startTime; } }
+        function createTicks() { const ticksContainer = document.getElementById('seek-ticks'); ticksContainer.innerHTML = ''; const thirtyMinutes = 30 * 60; for (let time = 3600; time <= finalTime; time += thirtyMinutes) { if (time < startTime) continue; const tick = document.createElement('span'); const totalSeconds = timeOffset + time; const hh = Math.floor(totalSeconds / 3600).toString().padStart(2, '0'); const mm = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0'); tick.textContent = `${hh}:${mm}`; const percent = (time - startTime) / (finalTime - startTime) * 100; tick.style.left = `${percent}%`; ticksContainer.appendChild(tick); } }
+        
+        function animate() {
+            // (animate関数の中身は変更ありません)
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (isPlaying && !isSeeking) {
+                currentSimTime += delta * timeScale;
+                if (currentSimTime > loopEndTime) { currentSimTime = startTime; }
+            }
+            if (!isSeeking) { seekBar.value = currentSimTime; }
+            if (nagaginobokoModel && animationPath && timetableKeyframes.length > 0) {
+                const kujiaratameStartTime = 3990;
+                const kujiaratameEndTime = 4244;
+                if (currentSimTime >= kujiaratameStartTime && currentSimTime <= kujiaratameEndTime) {
+                    kujiaratameLabelDiv.classList.add('visible');
+                } else {
+                    kujiaratameLabelDiv.classList.remove('visible');
+                }
+                let activeCornerEvent = null;
+                for (const event of cornerTurnEvents) {
+                    const firstKeyframe = event.keyframes[0];
+                    const lastKeyframe = event.keyframes[3];
+                    if (currentSimTime >= firstKeyframe.time && currentSimTime <= lastKeyframe.time) {
+                        activeCornerEvent = event;
+                        break;
+                    }
+                }
+                if (activeCornerEvent) {
+                    tsujimawashiLabelDiv.classList.remove('visible');
+                    const [kf1, kf2, kf3, kf4] = activeCornerEvent.keyframes;
+                    const t = activeCornerEvent.distance / pathTotalLength;
+                    const fixedPoint = animationPath.getPointAt(t);
+                    nagaginobokoModel.position.copy(fixedPoint);
+                    let currentAngleDeg;
+                    if (currentSimTime < kf2.time) {
+                        currentAngleDeg = kf1.angle;
+                        tsujimawashiLabelDiv.classList.remove('visible');
+                    } else if (currentSimTime >= kf2.time && currentSimTime < kf3.time) {
+                        tsujimawashiLabelDiv.classList.add('visible');
+                        const progress = (currentSimTime - kf2.time) / (kf3.time - kf2.time);
+                        let startAngle = kf2.angle;
+                        let endAngle = kf3.angle;
+                        let deltaAngle = endAngle - startAngle;
+                        if (deltaAngle > 180) { deltaAngle -= 360; } 
+                        else if (deltaAngle < -180) { deltaAngle += 360; }
+                        currentAngleDeg = startAngle + progress * deltaAngle;
+                    } else { 
+                        currentAngleDeg = kf4.angle;
+                        tsujimawashiLabelDiv.classList.remove('visible');
+                    }
+                    const currentAngleRad = THREE.MathUtils.degToRad(currentAngleDeg);
+                    nagaginobokoModel.rotation.y = -currentAngleRad;
+                } else {
+                    tsujimawashiLabelDiv.classList.remove('visible');
+                    let currentDistance = 0;
+                    let nextKeyframe = null; 
+                    const keyframes = timetableKeyframes;
+                    for (let i = 0; i < keyframes.length - 1; i++) {
+                        const prev = keyframes[i];
+                        const next = keyframes[i+1];
+                        if (currentSimTime >= prev.time && currentSimTime < next.time) {
+                            nextKeyframe = next;
+                            if (prev.distance === next.distance) { currentDistance = prev.distance; } 
+                            else { const timeRatio = (currentSimTime - prev.time) / (next.time - prev.time); currentDistance = prev.distance + (next.distance - prev.distance) * timeRatio; }
+                            break;
+                        }
+                    }
+                    if (currentSimTime >= loopEndTime) { currentDistance = keyframes[keyframes.length - 1].distance; nextKeyframe = keyframes[keyframes.length-1]; }
+                    const t = currentDistance / pathTotalLength;
+                    if (t >= 0 && t <= 1) {
+                        const currentPoint = animationPath.getPointAt(t);
+                        nagaginobokoModel.position.copy(currentPoint);
+                        if (nextKeyframe) {
+                            const targetAngleRad = THREE.MathUtils.degToRad(nextKeyframe.angle);
+                            nagaginobokoModel.rotation.y = -targetAngleRad;
+                        }
+                    }
+                }
+                
+                const totalSeconds = timeOffset + currentSimTime;
+                const hh = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+                const mm = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+                const ss = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
+                timeDisplay.textContent = `${hh}:${mm}:${ss}`;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        
+        function fitCameraToSelection(object, fitOffset = 1.2, controls) { const box = new THREE.Box3().setFromObject(object); const size = box.getSize(new THREE.Vector3()); const center = box.getCenter(new THREE.Vector3()); const maxSize = Math.max(size.x, size.y, size.z); const fitHeightDistance = maxSize / (2 * Math.atan(Math.PI * camera.fov / 360)); const fitWidthDistance = fitHeightDistance / camera.aspect; const distance = fitOffset * Math.max(fitHeightDistance, fitWidthDistance); const direction = controls.target.clone().sub(camera.position).normalize().multiplyScalar(distance); controls.maxDistance = distance * 10; controls.target.copy(center); camera.near = distance / 100; camera.far = distance * 100; camera.updateProjectionMatrix(); camera.position.copy(controls.target).sub(direction); controls.update(); }
+        
+        // ★ 1. ウィンドウリサイズ関数を定義
+        function onWindowResize() { 
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
