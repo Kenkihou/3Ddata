@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Character Controller - Final Fix</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #joystick-wrapper { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 120px; height: 120px; touch-action: none; }
+    </style>
+</head>
+<body>
+
+    <div id="joystick-wrapper"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- シーンやカメラ等の設定 (変更なし) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.Fog(0x87ceeb, 10, 50);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.enablePan = false;
+        controls.minDistance = 3;
+        controls.maxDistance = 15;
+        controls.minPolarAngle = 15 * (Math.PI / 180);
+        controls.maxPolarAngle = 75 * (Math.PI / 180);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+        const gridHelper = new THREE.GridHelper(100, 100);
+        scene.add(gridHelper);
+        const obstacles = [];
+        const numObstacles = 20;
+        const fieldSize = 40;
+        const safeZoneRadius = 5;
+        for (let i = 0; i < numObstacles; i++) {
+            const randomHeight = 2 + Math.random() * 6;
+            const boxGeometry = new THREE.BoxGeometry(2, randomHeight, 2);
+            const colors = [0xFF4500, 0xFF8C00, 0xFFD700, 0xFFA07A, 0xFF6347];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            const boxMaterial = new THREE.MeshStandardMaterial({ color: randomColor, transparent: true, opacity: 0.7 });
+            const obstacle = new THREE.Mesh(boxGeometry, boxMaterial);
+            let posX, posZ;
+            do {
+                posX = (Math.random() - 0.5) * fieldSize;
+                posZ = (Math.random() - 0.5) * fieldSize;
+            } while (Math.sqrt(posX * posX + posZ * posZ) < safeZoneRadius);
+            obstacle.position.set(posX, randomHeight / 2, posZ);
+            obstacle.castShadow = true;
+            obstacle.receiveShadow = true;
+            obstacle.bBox = new THREE.Box3().setFromObject(obstacle);
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+        }
+        const loader = new GLTFLoader();
+        let model, mixer, animationsMap, characterBox;
+        let currentAction;
+        const clock = new THREE.Clock();
+        loader.load(
+            'girl3.glb',
+            (gltf) => {
+                model = gltf.scene;
+                model.scale.set(1.0, 1.0, 1.0);
+                model.position.y = 0;
+                model.traverse((child) => { if (child.isMesh) child.castShadow = true; });
+                scene.add(model);
+                characterBox = new THREE.Box3().setFromObject(model);
+                camera.position.set(0, 2, 5);
+                controls.target.copy(model.position).add(new THREE.Vector3(0, 1, 0));
+                mixer = new THREE.AnimationMixer(model);
+                animationsMap = new Map();
+                gltf.animations.forEach((clip) => {
+                    const cleanName = clip.name.replace(/[|()]/g, '').trim();
+                    animationsMap.set(cleanName, mixer.clipAction(clip));
+                });
+                const idleAction = animationsMap.get('idle');
+                if (idleAction) { currentAction = idleAction; currentAction.play(); }
+            },
+            undefined, (error) => console.error(error)
+        );
+
+        // --- ジョイスティック設定 ---
+        const joystickZone = document.getElementById('joystick-wrapper');
+        const joystickManager = nipplejs.create({ zone: joystickZone, mode: 'static', position: { left: '50%', top: '50%' }, color: 'white', size: 120 });
+        const moveState = { x: 0, y: 0, force: 0, };
+        
+        joystickManager.on('move', (evt, data) => {
+            // ==========================================================
+            // ★★★★★ 修正箇所1： 'siez' -> 'size' にタイプミスを修正 ★★★★★
+            // ==========================================================
+            const force = data.distance / (joystickManager.options.size / 2);
+            moveState.force = Math.min(force, 1.0);
+            moveState.x = data.vector.x;
+            moveState.y = data.vector.y;
+        });
+        joystickManager.on('end', () => { 
+            moveState.force = 0; 
+            moveState.x = 0; 
+            moveState.y = 0; 
+        });
+
+        function switchToAction(newActionName) {
+            const newAction = animationsMap.get(newActionName);
+            if (!currentAction || !newAction || currentAction === newAction) { return; }
+            newAction.reset(); newAction.play();
+            currentAction.crossFadeTo(newAction, 0.3, true);
+            currentAction = newAction;
+        }
+        let isMoving = false;
+        const cameraFollowOffset = new THREE.Vector3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = clock.getDelta();
+
+            if (mixer && model) {
+                mixer.update(deltaTime);
+                
+                const wasMoving = isMoving;
+                isMoving = moveState.force > 0.05;
+
+                if (isMoving && !wasMoving) {
+                    cameraFollowOffset.copy(camera.position).sub(model.position);
+                }
+
+                if (isMoving) {
+                    controls.enabled = false; 
+
+                    const isRunning = moveState.force > 0.6;
+
+                    if (isRunning) {
+                        switchToAction('run');
+                    } else {
+                        switchToAction('walk1child');
+                    }
+                    
+                    // ==========================================================
+                    // ★★★★★ 修正箇所2：エラーの出ていた箇所を正しい書き方に修正 ★★★★★
+                    // ==========================================================
+                    const nippleInstance = joystickManager.get(0); // マネージャーからインスタンスを取得
+                    if (nippleInstance && nippleInstance.ui.front) {
+                        if (isRunning) {
+                            nippleInstance.ui.front.style.backgroundColor = 'skyblue';
+                        } else {
+                            nippleInstance.ui.front.style.backgroundColor = 'white';
+                        }
+                    }
+
+                    const walkSpeed = 1.5 * 1.2;
+                    const runSpeed = 4.0 * 1.2;
+                    const speed = isRunning ? runSpeed : walkSpeed;
+                    const moveDistance = speed * moveState.force * deltaTime;
+                    const cameraForward = new THREE.Vector3();
+                    camera.getWorldDirection(cameraForward);
+                    cameraForward.y = 0;
+                    cameraForward.normalize();
+                    const cameraRight = new THREE.Vector3().crossVectors(camera.up, cameraForward).negate();
+                    const moveDirection = cameraForward.multiplyScalar(moveState.y).add(cameraRight.multiplyScalar(moveState.x)).normalize();
+                    const characterAngle = Math.atan2(moveDirection.x, moveDirection.z) + Math.PI;
+                    const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), characterAngle);
+                    model.quaternion.slerp(targetQuaternion, 0.15);
+                    
+                    const intendedMove = moveDirection.clone().multiplyScalar(moveDistance);
+                    const nextPosition = model.position.clone().add(intendedMove);
+                    characterBox.setFromObject(model);
+                    const futureCharacterBox = characterBox.clone().translate(intendedMove);
+                    let collisionObstacle = null;
+                    for (const obstacle of obstacles) {
+                        if (futureCharacterBox.intersectsBox(obstacle.bBox)) {
+                            collisionObstacle = obstacle;
+                            break;
+                        }
+                    }
+                    if (collisionObstacle) {
+                        const normal = new THREE.Vector3();
+                        const charCenter = new THREE.Vector3();
+                        futureCharacterBox.getCenter(charCenter);
+                        const obsCenter = new THREE.Vector3();
+                        collisionObstacle.bBox.getCenter(obsCenter);
+                        const delta = charCenter.sub(obsCenter);
+                        if (Math.abs(delta.x) > Math.abs(delta.z)) {
+                            normal.set(Math.sign(delta.x), 0, 0);
+                        } else {
+                            normal.set(0, 0, Math.sign(delta.z));
+                        }
+                        const dot = moveDirection.dot(normal);
+                        const slideDirection = moveDirection.clone().sub(normal.multiplyScalar(dot));
+                        const slideMove = slideDirection.multiplyScalar(moveDistance);
+                        model.position.add(slideMove);
+                    } else {
+                        model.position.copy(nextPosition);
+                    }
+
+                } else {
+                    controls.enabled = true;
+                    switchToAction('idle');
+                    const nippleInstance = joystickManager.get(0);
+                    if (nippleInstance && nippleInstance.ui.front) {
+                        nippleInstance.ui.front.style.backgroundColor = 'white';
+                    }
+                }
+                
+                const modelCenter = model.position.clone().add(new THREE.Vector3(0, 1, 0));
+                if (isMoving) {
+                    camera.position.copy(model.position).add(cameraFollowOffset);
+                }
+                controls.target.copy(modelCenter);
+                controls.update();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
