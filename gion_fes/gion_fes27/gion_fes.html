@@ -1,0 +1,3428 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>祇園祭 山鉾巡行シミュレーション ver26</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: white;
+            font-family: 'メイリオ', Meiryo, sans-serif;
+        }
+        canvas.webgl-canvas {
+            display: block; 
+            position: fixed;
+            top: 0;
+            left: 0;
+            outline: none;
+            z-index: 1; 
+        }
+
+        .map-select-btn {
+            width: 100%;
+            padding: 8px;
+            background-color: #555;
+            color: white;
+            border: 1px solid #777;
+            cursor: pointer;
+            text-align: left;
+            border-radius: 4px;
+        }
+        .map-select-btn.active {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+
+        #css3d-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: black; display: flex; justify-content: center;
+            align-items: center; z-index: 9999;
+            transition: opacity 0.5s ease;
+            flex-direction: column;
+        }
+        #progress-container {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #progress-circle {
+            position: absolute;
+        }
+        .progress-background, .progress-bar {
+            fill: none;
+            stroke-width: 12;
+        }
+        .progress-background {
+            stroke: #444;
+        }
+        .progress-bar {
+            stroke: #ffc107;
+            stroke-linecap: round;
+            stroke-dasharray: 439.82;
+            stroke-dashoffset: 439.82;
+            transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+        }
+        #progress-text {
+            color: white;
+            font-size: 2em;
+            font-family: 'Inter', sans-serif;
+            font-weight: bold;
+        }
+
+        .ui-panel {
+            color: white; background-color: rgba(50, 50, 50, 0.7);
+            padding: 10px 15px; border-radius: 5px; 
+        }
+        
+        #top-left-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 102;
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+        }
+        
+        .control-container {
+            position: relative;
+        }
+
+        .top-bar-btn {
+            padding: 8px 15px;
+            background-color: rgba(50, 50, 50, 0.7);
+            color: white;
+            border: 1px solid #888;
+            cursor: pointer;
+            flex-shrink: 0;
+            white-space: nowrap;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .top-bar-btn:hover {
+            background-color: rgba(80, 80, 80, 0.8);
+        }
+
+        .top-bar-btn.active {
+            background-color: #007bff;
+            border-color: #0056b3;
+        }
+
+        #building-search-content-wrapper,
+        #map-content-wrapper,
+        #visibility-content-wrapper {
+            display: none;
+        }
+        
+        .close-btn {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            font-size: 1.8em;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            color: #fff;
+        }
+        .close-btn:hover {
+            color: #ffcccc;
+        }
+        
+        #camera-info-display {
+            position: absolute; 
+            bottom: 10px;
+            right: 10px;
+            width: auto;
+            z-index: 100;
+            font-family: monospace;
+            font-size: 0.9em;
+            line-height: 1.4;
+            white-space: pre;
+        }
+
+        #time-display {
+            position: absolute;
+            top: 55px;
+            left: 10px;
+            padding: 5px 10px;
+            font-size: 1.2em;
+            font-family: monospace;
+            z-index: 102;
+        }
+
+        .yamahoko-label, .yamahoko-label-sub {
+            position: absolute; color: white; background-color: rgba(0, 0, 0, 0.7);
+            padding: 2px 5px; border-radius: 3px; font-size: 0.8em;
+            white-space: nowrap; transform: translate(-50%, -120%);
+            pointer-events: none; z-index: 99; text-shadow: 0px 0px 3px black;
+            writing-mode: vertical-rl; text-orientation: upright;
+        }
+        .yamahoko-label-sub {
+            font-size: 0.7em;
+            z-index: 3;
+        }
+        .point-label {
+            position: absolute; color: black; background-color: rgba(255, 255, 255, 0.7);
+            padding: 2px 5px; border-radius: 3px; font-size: 0.7em;
+            white-space: nowrap; transform: translate(-50%, -50%);
+            pointer-events: none; z-index: 98;
+        }
+
+        .bunkazai-label, .bunkazai-label-sub,
+        .keikan-label, .keikan-label-sub,
+        .kyomachiya-label, .kyomachiya-label-sub {
+            position: absolute;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+            font-weight: bold;
+            transform: translate(-50%, -150%);
+            pointer-events: auto;
+            z-index: 98;
+            cursor: pointer;
+            display: none;
+        }
+
+        .bunkazai-label-sub, .keikan-label-sub, .kyomachiya-label-sub {
+            font-size: 0.7em;
+            z-index: 3;
+        }
+
+        .bunkazai-label, .bunkazai-label-sub {
+            color: #3e2723;
+            background-color: rgba(255, 224, 178, 0.85);
+            border: 1px solid #a1887f;
+        }
+        .keikan-label, .keikan-label-sub {
+            color: #e1bee7;
+            background-color: rgba(74, 20, 140, 0.85);
+            border: 1px solid #e1bee7;
+        }
+        .kyomachiya-label, .kyomachiya-label-sub {
+            color: #1b5e20;
+            background-color: rgba(200, 230, 201, 0.85);
+            border: 1px solid #1b5e20;
+        }
+
+        .bunkazai-label::after, .bunkazai-label-sub::after,
+        .keikan-label::after, .keikan-label-sub::after,
+        .kyomachiya-label::after, .kyomachiya-label-sub::after {
+            content: attr(data-name);
+            position: absolute;
+            bottom: 120%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            white-space: nowrap;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            pointer-events: none;
+        }
+
+        .bunkazai-label:hover::after, .bunkazai-label-sub:hover::after,
+        .keikan-label:hover::after, .keikan-label-sub:hover::after,
+        .kyomachiya-label:hover::after, .kyomachiya-label-sub:hover::after {
+            display: block;
+            opacity: 1;
+        }
+
+
+        #controls-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            width: 70%;
+            max-width: 600px;
+            transform: translateX(-50%);
+            background-color: rgba(50, 50, 50, 0.7);
+            padding: 10px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            z-index: 101;
+            height: 60px;
+            box-sizing: border-box;
+        }
+        #playPauseBtn {
+            padding: 5px 15px;
+            font-size: 1em;
+            cursor: pointer;
+            width: 150px;
+            text-align: center;
+            white-space: nowrap;
+            box-sizing: border-box; 
+        }
+        #seek-container { position: relative; width: 100%; height: 40px; }
+        #seekBar { width: 100%; cursor: pointer; margin: 0; }
+        #time-markers-container {
+            position: absolute; top: 25px; left: 0; width: 100%;
+            display: flex; pointer-events: none; font-family: monospace; font-size: 0.8em;
+        }
+        .time-marker { position: absolute; transform: translateX(-50%); color: white; }
+        
+        #map-content-wrapper h4,
+        #building-search-content-wrapper legend {
+            color: white;
+        }
+
+        #map-content-wrapper .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        #building-search-content-wrapper fieldset {
+            border: 1px solid #777;
+            border-radius: 4px;
+            padding: 10px;
+        }
+        
+        #building-search-content-wrapper div {
+            margin-bottom: 5px;
+        }
+        #building-search-content-wrapper label {
+            margin-left: 5px;
+            cursor: pointer;
+        }
+
+        .visibility-item { 
+            display: grid; 
+            grid-template-columns: 1fr auto; 
+            align-items: center; 
+            width: 100%; 
+            gap: 5px; 
+        }
+        .name-container { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+        }
+        .rank-column { 
+            width: 110px; 
+            flex-shrink: 0; 
+        }
+        .visibility-toggle-btn { width: 60px; flex-shrink: 0; }
+        #master-visibility-controls { display: flex; gap: 10px; width: 100%; margin-bottom: 8px; }
+        .master-btn { width: 100%; background-color: #555; color: white; border: 1px solid #777; cursor: pointer; }
+        .name-column { color: white; }
+
+        #sub-camera-label {
+            position: fixed;
+            left: 5px; 
+            transform: none; 
+            bottom: 288px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            z-index: 6;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #sub-camera-controls {
+            position: fixed;
+            left: 240px; 
+            bottom: 282px; 
+            z-index: 7;
+        }
+        #sub-camera-switch-btn {
+            padding: 4px 10px;
+            font-size: 0.8em;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: 1px solid #fff;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #sub-camera-switch-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        #camera-select-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+        #camera-select-modal.modal-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .modal-content {
+            background-color: #333;
+            color: white;
+            padding: 20px 25px;
+            border-radius: 10px;
+            width: 320px;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+        .modal-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 1.8em;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .modal-close-btn:hover {
+            color: #ffcccc;
+        }
+        #camera-select-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 15px;
+        }
+        #camera-select-list li {
+            padding: 12px;
+            border-bottom: 1px solid #555;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #camera-select-list li:hover {
+            background-color: #555;
+        }
+        #camera-select-list li:last-child {
+            border-bottom: none;
+        }
+        #sync-setting-container {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #555;
+            display: flex;
+            align-items: center;
+            font-size: 0.9em;
+        }
+        #sync-setting-container input {
+            margin-right: 8px;
+        }
+        #dynamic-loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 10000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+            font-family: 'メイリオ', Meiryo, sans-serif;
+        }
+        .spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #ffc107;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+
+        #dynamic-loading-text {
+            margin-top: 20px;
+            font-size: 1.2em;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #info-overlay, #panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        #info-overlay.visible, #panel-overlay.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .info-overlay-content, .panel-overlay-content {
+            background-color: rgba(40, 40, 40, 0.9);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            line-height: 1.8;
+            font-size: 1.1em;
+        }
+        .panel-overlay-content {
+            max-width: 320px;
+            font-size: 1em;
+        }
+
+        .info-overlay-close-btn, .panel-overlay-close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 2em;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            color: #fff;
+        }
+        .info-overlay-close-btn:hover, .panel-overlay-close-btn:hover {
+            color: #ffcccc;
+        }
+
+        @media (max-width: 768px) {
+            #top-left-controls {
+                width: 100%;
+                left: 0;
+                top: 0;
+                padding: 5px;
+                gap: 5px;
+                box-sizing: border-box;
+            }
+
+            #top-left-controls > * {
+                flex-grow: 1;
+                flex-basis: 0;
+            }
+
+            .top-bar-btn {
+                padding: 8px 5px;
+                text-align: center;
+                font-size: 0.8em;
+            }
+
+            #time-display {
+                top: 50px;
+                left: 5px;
+            }
+            #controls-container {
+                width: 80%;
+            }
+        }
+
+        body.is-phone #sub-camera-label,
+        body.is-phone #sub-camera-controls {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="webgl-canvas"></canvas>
+    
+    <div id="camera-info-display" class="ui-panel"></div>
+
+    <div id="sub-camera-label"></div>
+    <div id="sub-camera-controls">
+        <button id="sub-camera-switch-btn">カメラ切替</button>
+    </div>
+    <div id="camera-select-modal" class="modal-hidden">
+        <div class="modal-content">
+            <span class="modal-close-btn">×</span>
+            <h3>サブカメラ視点選択</h3>
+            <ul id="camera-select-list"></ul>
+            <div id="sync-setting-container">
+                <input type="checkbox" id="disable-video-sync">
+                <label for="disable-video-sync">サブカメラの視点の切り替えと動画の切り替えを連動させない</label>
+            </div>
+        </div>
+    </div>
+
+    <div id="css3d-container"></div>
+    
+    <div id="loading-overlay">
+        <div id="progress-container">
+            <svg id="progress-circle" width="160" height="160" viewBox="0 0 160 160">
+                <circle class="progress-background" cx="80" cy="80" r="70" />
+                <circle class="progress-bar" cx="80" cy="80" r="70" transform="rotate(-90 80 80)"/>
+            </svg>
+            <div id="progress-text">0%</div>
+        </div>
+    </div>
+
+    <div id="top-left-controls">
+        <button class="top-bar-btn">最小構成</button>
+        
+        <div id="building-search-container" class="control-container">
+            <button id="building-search-toggle-btn" class="top-bar-btn">建物検索</button>
+            <div id="building-search-content-wrapper">
+                <fieldset id="search-mode-checkboxes">
+                    <legend>表示するラベルを選択</legend>
+                    <div>
+                        <input type="checkbox" id="search-bunkazai" value="bunkazai">
+                        <label for="search-bunkazai">文化財</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="search-keikan" value="keikan">
+                        <label for="search-keikan">景観</label>
+                    </div>
+                    <div>
+                        <input type="checkbox" id="search-kyomachiya" value="kyomachiya">
+                        <label for="search-kyomachiya">京町家</label>
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+
+        <div class="control-container">
+             <button id="character-mode-btn" class="top-bar-btn">人物視点</button>
+        </div>
+
+        <button class="top-bar-btn">視点移動</button>
+
+        <div id="map-select-container" class="control-container">
+            <button id="toggle-map-btn" class="top-bar-btn">地図切替</button>
+            <div id="map-content-wrapper">
+                <h4>地理院タイル</h4>
+                <div class="button-group">
+                    <button class="map-select-btn" data-layer="ort">電子国土基本図（オルソ）</button>
+                    <button class="map-select-btn" data-layer="std">標準地図</button>
+                    <button class="map-select-btn" data-layer="ort_USA10">航空写真 (1945-50)</button>
+                    <button class="map-select-btn" data-layer="gazo1">航空写真(1974-78)</button>
+                </div>
+                <h4 style="margin-top: 15px;">各種情報</h4>
+                <div class="button-group">
+                    <button class="map-select-btn" data-layer="youto">用途地域</button>
+                    <button class="map-select-btn" data-layer="kodo">高度地区</button>
+                    <button class="map-select-btn" data-layer="keikan">京町家保全継承地区</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="visibility-controls" class="control-container">
+            <button id="toggle-visibility-btn" class="top-bar-btn">山鉾一覧</button>
+            <div id="visibility-content-wrapper">
+                 </div>
+        </div>
+    </div>
+
+    <div id="time-display" class="ui-panel"></div>
+    
+    <div id="controls-container">
+        <button id="playPauseBtn">再生</button>
+        <div id="seek-container">
+            <input type="range" id="seekBar" value="0" min="0" max="1000">
+            <div id="time-markers-container"></div>
+        </div>
+    </div>
+    
+    <div id="info-overlay">
+        <div class="info-overlay-content">
+            <span class="info-overlay-close-btn">&times;</span>
+            <div id="info-overlay-text"></div>
+        </div>
+    </div>
+
+    <div id="panel-overlay">
+        <div class="panel-overlay-content">
+            <span class="panel-overlay-close-btn">&times;</span>
+            <div id="panel-overlay-body"></div>
+        </div>
+    </div>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+        attribute float _id;
+        attribute float isKeikan;
+        attribute float isKyomachiya;
+        attribute float isBunkazai;
+        varying vec3 vNormal;
+        varying float vBuildingID;
+        varying vec3 vWorldPosition;
+        varying float vIsKeikan;
+        varying float vIsKyomachiya;
+        varying float vIsBunkazai;
+        
+        void main() {
+            vBuildingID = _id;
+            vIsKeikan = isKeikan;
+            vIsKyomachiya = isKyomachiya;
+            vIsBunkazai = isBunkazai;
+            vNormal = normalize(normalMatrix * normal);
+            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        varying float vBuildingID;
+        varying vec3 vNormal;
+        varying vec3 vWorldPosition;
+        varying float vIsKeikan;
+        varying float vIsKyomachiya;
+        varying float vIsBunkazai;
+
+        uniform float uSelectedID;
+        uniform vec3 uBaseColor;
+        uniform vec3 uHighlightColor;
+        
+        void main() {
+            if (vWorldPosition.z > 800.0 || vWorldPosition.z < -800.0 || vWorldPosition.x < -1050.0 || vWorldPosition.x > 950.0) {
+                discard;
+            }
+
+            vec3 baseColor = uBaseColor;
+            if (vIsKeikan > 0.5) {
+                baseColor = vec3(0.65, 0.55, 0.85); // 景観（紫）
+            } else if (vIsBunkazai > 0.5) {
+                baseColor = vec3(0.6, 0.4, 0.2);   // 文化財（茶色）
+            } else if (vIsKyomachiya > 0.5) {
+                baseColor = vec3(0.4, 0.8, 0.4);   // 京町家（緑）
+            }
+
+            vec3 finalColor = baseColor;
+            if (vBuildingID > 0.0 && vBuildingID == uSelectedID) {
+                finalColor = uHighlightColor;
+            }
+
+            vec3 lightDirection = normalize(vec3(0.5, 1.0, 0.75));
+            float ambientLight = 0.4;
+            float diffuse = max(dot(vNormal, lightDirection), 0.0);
+            float brightness = ambientLight + (1.0 - ambientLight) * diffuse;
+            vec3 lightedColor = finalColor * brightness;
+            
+            gl_FragColor = vec4(lightedColor, 1.0);
+        }
+    </script>
+
+    <script id="skyVertexShader" type="x-shader/x-vertex">
+        varying vec3 vWorldPosition;
+        void main() {
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+            gl_Position.z = gl_Position.w; 
+            vWorldPosition = position;
+        }
+    </script>
+    <script id="skyFragmentShader" type="x-shader/x-fragment">
+        varying vec3 vWorldPosition;
+        uniform vec3 uTopColor;
+        uniform vec3 uBottomColor;
+
+        void main() {
+            float h = normalize(vWorldPosition).y;
+            float t = (h + 1.0) / 2.0;
+            vec3 finalColor = mix(uBottomColor, uTopColor, smoothstep(0.5, 0.7, t));
+            float alpha = smoothstep(0.5, 0.55, t);
+            gl_FragColor = vec4(finalColor, alpha);
+        }
+    </script>
+
+    <script id="mapTileVertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        varying vec3 vWorldPosition;
+        void main() {
+            vUv = uv;
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+    </script>
+    <script id="mapTileFragmentShader" type="x-shader/x-fragment">
+        varying vec2 vUv;
+        varying vec3 vWorldPosition;
+
+        uniform sampler2D tMap;
+        uniform float uRadius;
+        uniform float uFadeDistance;
+
+        void main() {
+            float dist = length(vWorldPosition.xz);
+            float alpha = smoothstep(uRadius, uRadius - uFadeDistance, dist);
+
+            if (alpha < 0.01) {
+                discard;
+            }
+
+            vec4 texColor = texture2D(tMap, vUv);
+            gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
+        }
+    </script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+    
+    class GionSimulationApp {
+        constructor() {
+            const proj_WGS84 = "EPSG:4326";
+            const proj_JGD2011_ID = "EPSG:6674"; 
+            proj4.defs(proj_JGD2011_ID, "+proj=tmerc +lat_0=36 +lon_0=136 +k=0.9999 +x_0=0 +y_0=0 +ellps=GRS80 +units=m +no_defs");
+            this.wgs84_to_jgd2011 = proj4(proj_WGS84, proj_JGD2011_ID);
+
+            this.setupState();
+            this.setupCore();
+            this.setupDOM();
+            this.setupConstants();
+            this.loadInitialData();
+        }
+        setupCore() {
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 10, 8000);
+            
+            this.camera.layers.enable(2);
+            
+            this.topDownCamera = new THREE.PerspectiveCamera(50, 1, 10, 5000);
+            this.topDownCamera.layers.enable(0);
+            this.topDownCamera.layers.enable(1);
+            this.topDownCamera.position.set(0, 1500, 0);
+            this.topDownCamera.lookAt(0, 0, 0);
+
+            const markerGeometry = new THREE.CircleGeometry(10, 32);
+            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, side: THREE.DoubleSide });
+            this.characterPositionMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+            this.characterPositionMarker.rotation.x = -Math.PI / 2;
+            this.characterPositionMarker.layers.set(1);
+            this.scene.add(this.characterPositionMarker);
+
+            const canvas = document.querySelector('.webgl-canvas');
+            this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas: canvas, alpha: true });
+            this.renderer.setClearColor(0x000000, 0);
+            this.renderer.setSize(window.innerWidth, window.innerHeight); 
+            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.autoClear = false;
+
+            this.cssScene = new THREE.Scene();
+            this.cssRenderer = new CSS3DRenderer();
+            this.cssRenderer.setSize(window.innerWidth, window.innerHeight); 
+            document.getElementById('css3d-container').appendChild(this.cssRenderer.domElement);
+
+            this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+            this.controls.enableDamping = true;
+            this.controls.dampingFactor = 0.25;
+            this.controls.minPolarAngle = 0.01;
+            this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
+
+            const initialCamPos = new THREE.Vector3(10, 1200, 666);
+            this.camera.position.copy(initialCamPos);
+
+            const rotX = -56.2 * (Math.PI / 180);
+            this.camera.rotation.set(rotX, 0, 0);
+
+            const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+            const distance = 840;
+            const initialTargetPos = new THREE.Vector3().addVectors(this.camera.position, direction.multiplyScalar(distance));
+            this.controls.target.copy(initialTargetPos);
+            this.controls.update();
+
+            this.initialCameraPosition = initialCamPos.clone();
+            this.initialControlsTarget = initialTargetPos.clone();
+            
+            this.setupLights();
+            this.setupClipping();
+
+            window.addEventListener('resize', this.onWindowResize.bind(this));
+        }
+        onWindowResize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            this.camera.aspect = w / h;
+            this.camera.updateProjectionMatrix();
+            
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.cssRenderer.setSize(w, h);
+        }
+        
+        setupClipping() {
+            this.clippingPlanes = [
+                new THREE.Plane(new THREE.Vector3(0, 0, -1), 800),
+                new THREE.Plane(new THREE.Vector3(0, 0, 1), 800),
+                new THREE.Plane(new THREE.Vector3(1, 0, 0), 1050),
+                new THREE.Plane(new THREE.Vector3(-1, 0, 0), 950)
+            ];
+            this.renderer.localClippingEnabled = true;
+        }
+        
+        setupDOM() {
+            this.playPauseBtn = document.getElementById('playPauseBtn');
+            this.seekBar = document.getElementById('seekBar');
+            this.timeMarkersContainer = document.getElementById('time-markers-container');
+            this.cameraInfoDisplay = document.getElementById('camera-info-display');
+            this.visibilityControls = document.getElementById('visibility-controls');
+
+            this.subCameraLabel = document.getElementById('sub-camera-label');
+            this.subCameraSwitchBtn = document.getElementById('sub-camera-switch-btn');
+            this.cameraSelectModal = document.getElementById('camera-select-modal');
+            this.cameraSelectList = document.getElementById('camera-select-list');
+            this.modalCloseBtn = document.querySelector('.modal-close-btn');
+
+            this.disableVideoSyncCheckbox = document.getElementById('disable-video-sync');
+
+            this.mapSelectContainer = document.getElementById('map-select-container');
+            this.toggleMapBtn = document.getElementById('toggle-map-btn');
+            
+            this.characterModeBtn = document.getElementById('character-mode-btn');
+            
+            this.buildingSearchContainer = document.getElementById('building-search-container');
+            this.buildingSearchToggleBtn = document.getElementById('building-search-toggle-btn');
+            this.searchModeCheckboxes = document.getElementById('search-mode-checkboxes');
+            
+            this.infoOverlay = document.getElementById('info-overlay');
+            this.infoOverlayText = document.getElementById('info-overlay-text');
+            this.infoOverlayCloseBtn = document.querySelector('.info-overlay-close-btn');
+
+            this.panelOverlay = document.getElementById('panel-overlay');
+            this.panelOverlayBody = document.getElementById('panel-overlay-body');
+            this.panelOverlayCloseBtn = document.querySelector('.panel-overlay-close-btn');
+
+            this.timeDisplay = document.getElementById('time-display');
+        }
+
+        setupConstants() {
+            this.SIMULATION_SPEED_MULTIPLIER = 120;
+            this.START_HOUR = 8;
+            this.START_MINUTE = 25;
+            this.SIMULATION_START_TIME_OFFSET_MS = (this.START_HOUR * 3600 + this.START_MINUTE * 60) * 1000;
+            this.YAMAHOKO_TITLES = {
+                "長刀鉾": "01 くじ取らず", "占出山": "02 山一番", "霰天神山": "03 山二番", "山伏山": "04 山三番", "函谷鉾": "05 くじ取らず", "油天神山": "06 山四番", "綾傘鉾": "07 傘一番", "蟷螂山": "08 山五番", "菊水鉾": "09 鉾一番", "保昌山": "10 山六番", "伯牙山": "11 山七番", "白楽天山": "12 山八番", "月鉾": "13 鉾二番", "木賊山": "14 山九番", "四条傘鉾": "15 傘二番", "太子山": "16 山十番", "鶏鉾": "17 鉾三番", "芦刈山": "18 山十一番", "郭巨山": "19 山十二番", "孟宗山": "20 山十三番", "放下鉾": "21 くじ取らず", "岩戸山": "22 くじ取らず", "船鉾": "23 くじ取らず"
+            };
+
+            this.MAP_CENTER_LAT = 35.0052083333333;
+            this.MAP_CENTER_LON = 135.7625;
+            this.SKY_DOME_RADIUS = 2000;
+            this.MAP_AREA_METERS = this.SKY_DOME_RADIUS * 2;
+            this.MAP_ZOOM_LEVEL = 17;
+            this.MAP_YEAR = 2020;
+        }
+        
+setupState() {
+            this.isSubCameraVisible = true;
+            this.clock = new THREE.Clock(); 
+            this.relayPoints = {}; this.yamahokoData = [];
+            this.yamahokoMeshes = []; 
+            this.yamahokoLabels = []; 
+            this.pointLabels = [];
+            this.subCameraYamahokoLabels = [];
+            this.buildingLabels = [];
+            this.subCameraBuildingLabels = [];
+
+            this.visibilityToggleButtons = [];
+            this.toggleVisibilityBtn = null;
+            this.lastTime = 0; this.simulationClockTimeMs = 0;
+            this.animationFrameId = null; this.simulationEndTimeMs = 0;
+            this.isPaused = true; this.wasPlayingBeforeSeek = false;
+            
+            this.interactiveMeshes = [];
+            this.interactiveBuildingGroup = new THREE.Group();
+            this.customBuildingMaterial = null;
+            this.buildingAttributes = {};
+            this.keikanData = new Map();
+            this.keikanGmlIds = new Set();
+            this.kyomachiyaGmlIds = new Set();
+            this.bunkazaiData = new Map();
+            this.bunkazaiGmlIds = new Set();
+
+            this.buildingModel1946 = null;
+            this.interactiveMeshes1946 = [];
+            this.buildingModel1975 = null;
+            this.isLoading1946Model = false;
+            this.isLoading1975Model = false;
+
+            this.cssScene = null; this.cssRenderer = null;
+            
+            this.yamahokoModels = new Map();
+            this.naginataBokoProxy = null;
+            this.htmlTextPivot = null;
+
+            this.subCameras = [];
+            this.activeSubCameraIndex = 0;
+            this.topDownCamera = null;
+            this.characterPositionMarker = null;
+            this.subCameraData = [
+                { name: '四条河原町南東角から' },
+                { name: '京都市役所屋上付近から', position: new THREE.Vector3(580, 70, -720), lookAtTargetName: '河原町御池' },
+                { name: '長刀鉾斜め前方から', type: 'chase', targetName: '長刀鉾', offset: new THREE.Vector3(15, 15, 15) }
+            ];
+            
+            this.mapLayers = {
+                'std': { url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', type: 'tile' },
+                'ort': { url: 'https://cyberjapandata.gsi.go.jp/xyz/ort/{z}/{x}/{y}.jpg', type: 'tile' },
+                'ort_USA10': { url: 'https://cyberjapandata.gsi.go.jp/xyz/ort_USA10/{z}/{x}/{y}.png', type: 'tile' },
+                'gazo1': { url: 'https://cyberjapandata.gsi.go.jp/xyz/gazo1/{z}/{x}/{y}.jpg', type: 'tile' },
+                'youto': { url: '../gion_asset/用途地域＋高度地区.geojson', type: 'geojson', name: '用途地域' },
+                'kodo': { url: '../gion_asset/用途地域＋高度地区.geojson', type: 'geojson', name: '高度地区' },
+                'keikan': { url: '../gion_asset/京町家保全継承地区.geojson', type: 'geojson', name: '景観・京町家' }
+            };
+            this.currentMapLayer = 'ort';
+            this.mapGroup = null; 
+            this.subCameraMapGroup = null;
+            this.kodoInteractiveObjects = []; 
+            this.hoveredKodoPolygon = null;
+
+            this.isCharacterMode = false;
+            this.isSelectingStartPosition = false;
+            this.girlModel = null; this.girlMixer = null; this.girlActions = {}; this.activeGirlAction = null;
+            this.keyState = {};
+            
+            this.walkableArea = null; 
+            this.walkableMeshes = [];
+            this.walkableAreaMaterial = null;
+            this.walkableAreaHighlightMaterial = null;
+            
+            this.characterCollisionHelper = null;
+            this.characterVerticalState = 'GROUNDED';
+            this.flightTween = { active: false, startTime: 0, startY: 0, endY: 0, duration: 1.0 };
+            this.flyButtonPressed = false;
+            this.coyoteTime = 0;
+
+            this.characterRaycaster = new THREE.Raycaster();
+            this.GAMEPAD_BUTTON_MAP = { DPAD_UP: 12, DPAD_DOWN: 13, DPAD_LEFT: 14, DPAD_RIGHT: 15, B_BUTTON: 1, FLY_BUTTON: 0 };
+            this.turn180Timer = -1; this.targetRotationY = 0; this.modelRotationY = 0;
+            this.currentCameraDistance = 4.0;
+            this.currentCameraHeight = 2.0;
+            
+            this.characterRadius = 1.2;
+            this.characterHeight = 1.45;
+
+            this.activeSearchModes = new Set();
+
+            this.loadingProgress = 0;
+            this.circleCircumference = 0;
+
+            this.roadAsphaltModel = null;
+            this.roadMarkingModel = null;
+            this.busBayModel = null;
+            this.gutterModel = null;
+            this.sidewalkModel = null;
+
+            this.buildingModel1946 = null;
+            this.isLoading1946Model = false;
+            
+            this.roadGeojsonData = null; 
+        }
+        setupLights() {
+            this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            keyLight.position.set(5, 5, 8);
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            fillLight.position.set(-5, 2, 4);
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            backLight.position.set(0, 10, -10);
+            this.scene.add(keyLight, fillLight, backLight);
+        }
+
+        updateLoadingProgress(percent) {
+            this.loadingProgress = Math.min(100, Math.max(0, percent));
+            const progressBar = document.querySelector('.progress-bar');
+            const progressText = document.getElementById('progress-text');
+            
+            if (!progressBar || !progressText) return;
+
+            if (this.circleCircumference === 0) {
+                const radius = progressBar.r.baseVal.value;
+                this.circleCircumference = 2 * Math.PI * radius;
+                progressBar.style.strokeDasharray = this.circleCircumference;
+            }
+
+            const offset = this.circleCircumference - (this.loadingProgress / 100) * this.circleCircumference;
+            progressBar.style.strokeDashoffset = offset;
+
+            if (this.loadingProgress < 40) {
+                progressBar.style.stroke = '#ffc107';
+            } else if (this.loadingProgress < 80) {
+                progressBar.style.stroke = '#90caf9';
+            } else {
+                progressBar.style.stroke = '#a5d6a7';
+            }
+
+            progressText.textContent = `${Math.round(this.loadingProgress)}%`;
+        }
+
+        async loadInitialData() {
+            try {
+                const assetsToLoad = [
+                    { name: 'Relay_point.json', weight: 4 }, { name: 'yamahoko2.json', weight: 4 },
+                    { name: '../gion_asset/merged_merged_output.json', weight: 15 },
+                    { name: '../gion_asset/景観+彩る.json', weight: 4 }, { name: '../gion_asset/kyomachiya_kachizuke.json', weight: 4 },
+                    { name: '../gion_asset/bunkazai_kachizuke.json', weight: 4 },
+                    { name: 'subCameraMap', weight: 5 }, { name: 'mapTiles', weight: 5 },
+                    { name: 'interactiveModels', weight: 45 }, 
+                    { name: 'otherModels', weight: 10 }
+                ];
+                const totalWeight = assetsToLoad.reduce((sum, asset) => sum + asset.weight, 0);
+                let completedWeight = 0;
+
+                const markAssetAsLoaded = (assetName) => {
+                    const asset = assetsToLoad.find(a => a.name === assetName);
+                    if (asset) {
+                        completedWeight += asset.weight;
+                        const progress = (completedWeight / totalWeight) * 100;
+                        this.updateLoadingProgress(progress);
+                    }
+                };
+                
+                const [relayRes, yamahokoRes, buildingAttrRes, keikanRes, kyomachiyaRes, bunkazaiRes] = await Promise.all([
+                    fetch('Relay_point.json').finally(() => markAssetAsLoaded('Relay_point.json')),
+                    fetch('yamahoko2.json').finally(() => markAssetAsLoaded('yamahoko2.json')),
+                    fetch('../gion_asset/merged_merged_output.json').finally(() => markAssetAsLoaded('../gion_asset/merged_merged_output.json')),
+                    fetch('../gion_asset/景観+彩る.json').finally(() => markAssetAsLoaded('../gion_asset/景観+彩る.json')),
+                    fetch('../gion_asset/kyomachiya_kachizuke.json').finally(() => markAssetAsLoaded('kyomachiya_kachizuke.json')),
+                    fetch('../gion_asset/bunkazai_kachizuke.json').finally(() => markAssetAsLoaded('bunkazai_kachizuke.json'))
+                ]);
+
+                if (!relayRes.ok) throw new Error(`Relay_point.json: ${relayRes.statusText}`);
+                if (!yamahokoRes.ok) throw new Error(`yamahoko2.json: ${yamahokoRes.statusText}`);
+                if (!buildingAttrRes.ok) throw new Error(`merged_merged_output.json: ${buildingAttrRes.statusText}`);
+                if (!keikanRes.ok) throw new Error(`keikan_kachizuke.json: ${keikanRes.statusText}`);
+                if (!kyomachiyaRes.ok) throw new Error(`kyomachiya_kachizuke.json: ${kyomachiyaRes.statusText}`);
+                if (!bunkazaiRes.ok) throw new Error(`bunkazai_kachizuke.json: ${bunkazaiRes.statusText}`);
+                
+                const relayData = await relayRes.json();
+                this.yamahokoData = await yamahokoRes.json();
+                const buildingAttrData = await buildingAttrRes.json();
+                const keikanData = await keikanRes.json();
+                const kyomachiyaData = await kyomachiyaRes.json();
+                const bunkazaiData = await bunkazaiRes.json();
+
+                buildingAttrData.forEach(attr => {
+                    const key = attr.sequential_id || attr.serial_number;
+                    if (key) {
+                        this.buildingAttributes[key] = attr;
+                    }
+                });
+
+                keikanData.forEach(item => {
+                    if (item.GML_ID) {
+                        this.keikanData.set(item.GML_ID, item);
+                        this.keikanGmlIds.add(item.GML_ID);
+                    }
+                });
+
+                kyomachiyaData.forEach(item => {
+                    if (item['GML ID']) {
+                       this.kyomachiyaGmlIds.add(item['GML ID']);
+                    }
+                });
+                
+                bunkazaiData.forEach(item => {
+                    if (item['GML ID']) {
+                        this.bunkazaiData.set(item['GML ID'], item);
+                        this.bunkazaiGmlIds.add(item['GML ID']);
+                    }
+                });
+
+                relayData.forEach(p => {
+                    if(p.location && p.location.x && p.location.y && p.location.z) {
+                       this.relayPoints[p.name] = new THREE.Vector3(parseFloat(p.location.x), parseFloat(p.location.z), -parseFloat(p.location.y));
+                    }
+                });
+                
+                await this.loadAllModels()
+                    .finally(() => {
+                        markAssetAsLoaded('interactiveModels');
+                        markAssetAsLoaded('otherModels');
+                    });
+
+                await this.loadSubCameraMap().finally(() => markAssetAsLoaded('subCameraMap'));
+                
+                await this.loadMapTiles().finally(() => markAssetAsLoaded('mapTiles'));
+                
+                this.setupSubCameras();
+                this.initializeSceneObjects();
+                this.setupUI();
+
+                this.updateSceneToTime(this.SIMULATION_START_TIME_OFFSET_MS);
+
+                console.log("Pre-compiling shaders...");
+                this.renderer.compile(this.scene, this.camera);
+                console.log("Shader pre-compilation complete.");
+
+                this.updateLoadingProgress(100);
+                
+                setTimeout(() => {
+                    const overlay = document.getElementById('loading-overlay');
+                    overlay.style.opacity = '0';
+                    setTimeout(() => {
+                        overlay.style.display = 'none';
+                    }, 500);
+                }, 300);
+
+
+                this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+
+            } catch (error) {
+                console.error('初期データ読み込みエラー:', error);
+                const progressText = document.getElementById('progress-text');
+                if(progressText) progressText.textContent = 'Error';
+            }
+        }
+        
+        async loadSubCameraMap() {
+            if (this.subCameraMapGroup) {
+                this.scene.remove(this.subCameraMapGroup);
+            }
+            this.subCameraMapGroup = new THREE.Group();
+            this.subCameraMapGroup.name = "SubCameraMap";
+            this.scene.add(this.subCameraMapGroup);
+
+            const modelsToClone = [
+                this.roadAsphaltModel,
+                this.busBayModel,
+                this.sidewalkModel,
+                this.gutterModel,
+                this.roadMarkingModel
+            ];
+
+            modelsToClone.forEach(model => {
+                if (model) {
+                    const clonedModel = model.clone();
+                    clonedModel.visible = true;
+                    this.subCameraMapGroup.add(clonedModel);
+                }
+            });
+            
+            if (this.roadAsphaltModel) {
+                 console.log("Sub-camera map models cloned and set to visible.");
+            } else {
+                console.error("Road models for sub-camera not found. They might not have been loaded yet.");
+            }
+        }
+
+        async loadAllModels() {
+            const loader = new GLTFLoader();
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/');
+            loader.setDRACOLoader(dracoLoader);
+            
+            const interactiveModelPaths = [
+                '../gion_asset/bldg.glb' 
+            ];
+            const girlPath = '../gion_asset/girl2.glb';
+            const tranPath = '../gion_asset/tran_3.glb'; 
+            const roadPath = '../gion_asset/車道アスファルト.glb';
+            const markingPath = '../gion_asset/白線.glb';
+            const busBayPath = '../gion_asset/バスベイ.glb';
+            const gutterPath = '../gion_asset/側溝.glb';
+            const sidewalkPath = '../gion_asset/歩道.glb';
+
+            const yamahokoModelNames = [
+                '長刀鉾', '占出山', '霰天神山', '山伏山', '函谷鉾', '油天神山', 
+                '菊水鉾', '白楽天山', '月鉾', '木賊山', '太子山', '鶏鉾', 
+                '孟宗山', '放下鉾', '船鉾'
+            ];
+
+            this.customBuildingMaterial = this.createCustomMaterial();
+
+            const interactivePromises = interactiveModelPaths.map(path => loader.loadAsync(path).catch(e => console.error(`Failed to load ${path}`, e)));
+            const girlPromise = loader.loadAsync(girlPath).catch(e => console.error(`Failed to load ${girlPath}`, e));
+            const tranPromise = loader.loadAsync(tranPath).catch(e => console.error(`Failed to load ${tranPath}`, e));
+            const roadPromise = loader.loadAsync(roadPath).catch(e => console.error(`Failed to load ${roadPath}`, e));
+            const markingPromise = loader.loadAsync(markingPath).catch(e => console.error(`Failed to load ${markingPath}`, e));
+            const busBayPromise = loader.loadAsync(busBayPath).catch(e => console.error(`Failed to load ${busBayPath}`, e));
+            const gutterPromise = loader.loadAsync(gutterPath).catch(e => console.error(`Failed to load ${gutterPath}`, e));
+            const sidewalkPromise = loader.loadAsync(sidewalkPath).catch(e => console.error(`Failed to load ${sidewalkPath}`, e));
+            const yamahokoLoadPromises = yamahokoModelNames.map(name =>
+                loader.loadAsync(`../gion_asset/${name}.glb`)
+                    .then(gltf => ({ name, gltf, status: 'fulfilled' }))
+                    .catch(error => ({ name, status: 'rejected', reason: error }))
+            );
+
+            const [interactiveGltfs, girlGltf, tranGltf, roadGltf,markingGltf, busBayGltf, gutterGltf, sidewalkGltf, yamahokoResults] = await Promise.all([
+                Promise.all(interactivePromises),
+                girlPromise,
+                tranPromise,
+                roadPromise,
+                markingPromise,
+                busBayPromise,
+                gutterPromise,
+                sidewalkPromise,
+                Promise.all(yamahokoLoadPromises)
+            ]);
+
+            yamahokoResults.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    const model = result.gltf.scene;
+                    model.traverse(child => {
+                        if (child.isMesh) {
+                            child.material.clippingPlanes = this.clippingPlanes;
+                            child.material.clipIntersection = false;
+                        }
+                    });
+                    this.yamahokoModels.set(result.name, model);
+                } else {
+                    console.warn(`モデルの読み込みに失敗: ${result.name}.glb。立方体で代替します。`, result.reason);
+                }
+            });
+
+            const loggedMeshNames = new Set();
+
+            interactiveGltfs.forEach(gltf => {
+                if(!gltf) return;
+                const model = gltf.scene;
+                model.traverse(object => {
+                    if (object.isMesh && !loggedMeshNames.has(object.uuid)) {
+                        console.log(`メッシュ名: ${object.name || '名前なし'} の属性一覧:`, Object.keys(object.geometry.attributes));
+                        loggedMeshNames.add(object.uuid);
+                    }
+                });
+            });
+
+            interactiveGltfs.forEach(gltf => {
+                if(!gltf) return;
+                const model = gltf.scene;
+                model.traverse(object => {
+                    if (object.isMesh && object.geometry.attributes.uv) {
+                        const uvAttribute = object.geometry.attributes.uv;
+                        const vertexCount = uvAttribute.count;
+
+                        const idArray = new Float32Array(vertexCount);
+                        const isKeikanArray = new Float32Array(vertexCount).fill(0.0);
+                        const isKyomachiyaArray = new Float32Array(vertexCount).fill(0.0);
+                        const isBunkazaiArray = new Float32Array(vertexCount).fill(0.0);
+                        
+                        for (let i = 0; i < vertexCount; i++) {
+                            const buildingId = Math.round(uvAttribute.getX(i));
+                            idArray[i] = buildingId;
+
+                            if (i < 10) {
+                                console.log(`頂点[${i}]: U値 = ${uvAttribute.getX(i)}, 四捨五入後のID = ${buildingId}`);
+                            }
+
+                            const buildingAttr = this.buildingAttributes[buildingId];
+                            if (buildingAttr) {
+                                if (this.keikanGmlIds.has(buildingAttr.id)) isKeikanArray[i] = 1.0;
+                                if (this.kyomachiyaGmlIds.has(buildingAttr.id)) {
+                                    const height = parseFloat(buildingAttr.measuredHeight);
+                                    if (!isNaN(height) && height < 10.0) isKyomachiyaArray[i] = 1.0;
+                                }
+                                if (this.bunkazaiGmlIds.has(buildingAttr.id)) isBunkazaiArray[i] = 1.0;
+                            }
+                        }
+                        
+                        object.geometry.setAttribute('_id', new THREE.BufferAttribute(idArray, 1));
+                        object.geometry.setAttribute('isKeikan', new THREE.BufferAttribute(isKeikanArray, 1));
+                        object.geometry.setAttribute('isKyomachiya', new THREE.BufferAttribute(isKyomachiyaArray, 1));
+                        object.geometry.setAttribute('isBunkazai', new THREE.BufferAttribute(isBunkazaiArray, 1));
+                        
+                        object.material = this.customBuildingMaterial;
+                        this.interactiveMeshes.push(object);
+                    }
+                });
+                this.interactiveBuildingGroup.add(model);
+            });
+            this.scene.add(this.interactiveBuildingGroup);
+
+            this._createAllBuildingLabels();
+            
+            if (girlGltf) {
+                this.girlModel = girlGltf.scene;
+                const box = new THREE.Box3().setFromObject(this.girlModel);
+                const size = box.getSize(new THREE.Vector3());
+                const scale = this.characterHeight / size.y;
+                this.girlModel.scale.set(scale, scale, scale);
+                this.girlModel.traverse(child => { if (child.isMesh) child.castShadow = true; });
+                this.girlModel.visible = false;
+                this.scene.add(this.girlModel);
+                this.girlMixer = new THREE.AnimationMixer(this.girlModel);
+                girlGltf.animations.forEach(clip => { this.girlActions[clip.name] = this.girlMixer.clipAction(clip); });
+                if (this.girlActions['idle']) this.switchCharacterAnimation('idle');
+
+                const helperGeo = new THREE.CylinderGeometry(this.characterRadius, this.characterRadius, this.characterHeight, 16);
+                const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
+                this.characterCollisionHelper = new THREE.Mesh(helperGeo, helperMat);
+                this.characterCollisionHelper.position.y = this.characterHeight / 2;
+                this.characterCollisionHelper.visible = false;
+                this.girlModel.add(this.characterCollisionHelper);
+            }
+
+            if (tranGltf) {
+                this.walkableArea = tranGltf.scene;
+                this.walkableAreaMaterial = new THREE.MeshBasicMaterial({ visible: false });
+                this.walkableAreaHighlightMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    transparent: true,
+                    opacity: 0.4,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2.0,
+                    polygonOffsetUnits: -1.0
+                });
+
+                this.walkableArea.position.y = 0.11;
+                
+                this.walkableArea.traverse(object => {
+                    if (object.isMesh) {
+                        object.material = this.walkableAreaMaterial;
+                        this.walkableMeshes.push(object);
+                    }
+                });
+                this.scene.add(this.walkableArea);
+            }
+            
+            if (roadGltf) {
+                this.roadAsphaltModel = roadGltf.scene;
+                const asphaltMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x696969,
+                    roughness: 0.8,
+                    metalness: 0.1
+                });
+                this.roadAsphaltModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.material = asphaltMaterial;
+                    }
+                });
+                this.roadAsphaltModel.position.y = 0.01;
+                this.roadAsphaltModel.rotation.y = 0;
+                this.roadAsphaltModel.visible = false;
+                this.scene.add(this.roadAsphaltModel);
+            }
+            const roadParts = [
+                { modelGltf: busBayGltf,   prop: 'busBayModel',   color: 0x808080 },
+                { modelGltf: sidewalkGltf, prop: 'sidewalkModel', color: 0xA9A9A9 },
+                { modelGltf: gutterGltf,   prop: 'gutterModel',   color: 0xC0C0C0 },
+                { modelGltf: markingGltf,  prop: 'roadMarkingModel', color: 0xFFFFFF },
+            ];
+
+            const roadPartYPosition = 0.11;
+
+            roadParts.forEach(part => {
+                if (part.modelGltf) {
+                    this[part.prop] = part.modelGltf.scene;
+                    const material = new THREE.MeshStandardMaterial({
+                        color: part.color,
+                        roughness: 0.8,
+                        metalness: 0.1
+                    });
+                    this[part.prop].traverse(child => {
+                        if (child.isMesh) {
+                            child.material = material;
+                        }
+                    });
+                    this[part.prop].position.y = roadPartYPosition;
+                    this[part.prop].rotation.y = 0;
+                    this[part.prop].visible = false;
+                    this.scene.add(this[part.prop]);
+                }
+            });
+            console.log('3Dモデル読み込み完了');
+        }
+
+        async _loadRoadGeojsonIfNeeded() {
+            if (this.roadGeojsonData) {
+                return;
+            }
+
+            const loadingOverlay = document.getElementById('dynamic-loading-overlay');
+            loadingOverlay.style.display = 'flex';
+
+            try {
+                const response = await fetch('../gion_asset/道路_半径2000m.geojson');
+                if (!response.ok) {
+                    throw new Error('道路GeoJSONの読み込みに失敗しました');
+                }
+                this.roadGeojsonData = await response.json();
+                console.log("道路GeoJSONが正常に読み込まれました。");
+            } catch (error) {
+                console.error("道路GeoJSONの読み込みエラー:", error);
+                this.roadGeojsonData = { type: "FeatureCollection", features: [] };
+            } finally {
+                loadingOverlay.style.display = 'none';
+            }
+        }
+        
+        async load1946Model() {
+            if (this.buildingModel1946 || this.isLoading1946Model) {
+                return;
+            }
+
+            const loadingOverlay = document.getElementById('dynamic-loading-overlay');
+            loadingOverlay.style.display = 'flex';
+
+            this.isLoading1946Model = true;
+            console.log("1946年建築物モデルの読み込みを開始します...");
+
+            const loader = new GLTFLoader();
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/');
+            loader.setDRACOLoader(dracoLoader);
+
+            try {
+                const gltf = await loader.loadAsync('../gion_asset/1946建築物モデル.glb');
+                this.buildingModel1946 = gltf.scene;
+                this.interactiveMeshes1946 = [];
+                this.buildingModel1946.traverse(object => {
+                    if (object.isMesh) {
+                        if (object.material) {
+                            object.material.clippingPlanes = this.clippingPlanes;
+                            object.material.clipIntersection = false;
+                        }
+                        this.interactiveMeshes1946.push(object);
+                    }
+                });
+                this.scene.add(this.buildingModel1946);
+                
+                this._updateBuildingModelsVisibility(this.currentMapLayer);
+                console.log("1946年建築物モデルの読み込みが完了しました。");
+
+            } catch (error) {
+                console.error("1946年建築物モデルの読み込みに失敗しました:", error);
+            } finally {
+                this.isLoading1946Model = false;
+                loadingOverlay.style.display = 'none';
+            }
+        }
+
+        async load1975Model() {
+            if (this.buildingModel1975 || this.isLoading1975Model) {
+                return;
+            }
+
+            const loadingOverlay = document.getElementById('dynamic-loading-overlay');
+            loadingOverlay.style.display = 'flex';
+
+            this.isLoading1975Model = true;
+            console.log("1975年建築物モデルの読み込みを開始します...");
+
+            const loader = new GLTFLoader();
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/');
+            loader.setDRACOLoader(dracoLoader);
+
+            try {
+                const gltf = await loader.loadAsync('../gion_asset/1975建築物モデル.glb');
+                this.buildingModel1975 = gltf.scene;
+                this.buildingModel1975.traverse(object => {
+                    if (object.isMesh && object.material) {
+                        object.material.clippingPlanes = this.clippingPlanes;
+                        object.material.clipIntersection = false;
+                    }
+                });
+                this.scene.add(this.buildingModel1975);
+                
+                this._updateBuildingModelsVisibility(this.currentMapLayer);
+                console.log("1975年建築物モデルの読み込みが完了しました。");
+
+            } catch (error) {
+                console.error("1975年建築物モデルの読み込みに失敗しました:", error);
+            } finally {
+                this.isLoading1975Model = false;
+                loadingOverlay.style.display = 'none';
+            }
+        }
+        
+        _showLabelInfoPanel(gmlId, buildingId) {
+            let infoHtml = '';
+
+            const bunkazaiInfo = this.bunkazaiData.get(gmlId);
+            if (bunkazaiInfo) {
+                if (infoHtml !== '') infoHtml += `<hr style="border-color: #555; margin: 10px 0;">`;
+                infoHtml += `<b>名称:</b> ${bunkazaiInfo['名称'] || '不明'}<br>`;
+                infoHtml += `<b>文化財種類:</b> ${bunkazaiInfo['文化財種類'] || '不明'}<br>`;
+                infoHtml += `<b>時代:</b> ${bunkazaiInfo['時代'] || '不明'}<br>`;
+            }
+
+            const keikanInfo = this.keikanData.get(gmlId);
+            if (keikanInfo) {
+                if (infoHtml !== '') infoHtml += `<hr style="border-color: #555; margin: 10px 0;">`;
+                const fieldsToShow = { '表示名称': { label: '表示名称' },'景観重要建造物': { label: '景観重要建造物', type: 'boolean' },'歴史的風致形成建造物': { label: '歴史的風致形成建造物', type: 'boolean' },'指定理由１': { label: '指定理由１' },'指定理由２': { label: '指定理由２' },'歴史的意匠建造物': { label: '歴史的意匠建造物', type: 'boolean' },'界わい景観建造物': { label: '界わい景観建造物', type: 'boolean' },'京都を彩る建物や庭園': { label: '京都を彩る建物や庭園', type: 'boolean' },'彩るURL': { label: '彩るURL', type: 'url' } };
+                for (const key in fieldsToShow) {
+                    const value = keikanInfo[key];
+                    if (value !== null && value !== '' && value !== undefined) {
+                        const config = fieldsToShow[key];
+                        switch(config.type) {
+                            case 'boolean': infoHtml += `<b>${config.label}:</b> 指定あり<br>`; break;
+                            case 'url': infoHtml += `<b>${config.label}:</b> <a href="${value}" target="_blank" style="color: #90caf9;">リンクを開く</a><br>`; break;
+                            default: infoHtml += `<b>${config.label}:</b> ${value}<br>`; break;
+                        }
+                    }
+                }
+            }
+
+            if (infoHtml !== '') {
+                this.infoOverlayText.innerHTML = infoHtml;
+                this.infoOverlay.classList.add('visible');
+            }
+        }
+        
+        _createAllBuildingLabels() {
+            const buildingVertices = new Map();
+
+            this.interactiveMeshes.forEach(mesh => {
+                const idAttribute = mesh.geometry.attributes._id;
+                const positionAttribute = mesh.geometry.attributes.position;
+                const matrix = mesh.matrixWorld;
+
+                for (let i = 0; i < idAttribute.count; i++) {
+                    const buildingId = idAttribute.getX(i);
+                    const buildingAttr = this.buildingAttributes[buildingId];
+                    if (buildingAttr && (this.bunkazaiGmlIds.has(buildingAttr.id) || this.keikanGmlIds.has(buildingAttr.id) || this.kyomachiyaGmlIds.has(buildingAttr.id))) {
+                        if (!buildingVertices.has(buildingId)) {
+                            buildingVertices.set(buildingId, { vertices: [], gmlId: buildingAttr.id });
+                        }
+                        const vertex = new THREE.Vector3().fromBufferAttribute(positionAttribute, i);
+                        vertex.applyMatrix4(matrix);
+                        buildingVertices.get(buildingId).vertices.push(vertex);
+                    }
+                }
+            });
+            
+            buildingVertices.forEach((data, buildingId) => {
+                if (data.vertices.length === 0) return;
+
+                let sumX = 0, sumZ = 0, maxY = -Infinity;
+                data.vertices.forEach(v => { sumX += v.x; sumZ += v.z; maxY = Math.max(maxY, v.y); });
+
+                const anchorPosition = new THREE.Vector3( sumX / data.vertices.length, maxY, sumZ / data.vertices.length );
+                const clickHandler = (e) => { e.stopPropagation(); this._showLabelInfoPanel(data.gmlId, buildingId); };
+                
+                let labelCount = 0;
+                const createLabel = (info) => {
+                    const offset = new THREE.Vector3(labelCount * 20, 0, 0); 
+                    labelCount++;
+                    
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = info.css;
+                    labelDiv.textContent = info.text;
+                    labelDiv.dataset.name = info.name;
+                    labelDiv.addEventListener('click', clickHandler);
+                    document.body.appendChild(labelDiv);
+                    this.buildingLabels.push({ position: anchorPosition.clone().add(offset), label: labelDiv, type: info.type, buildingId: buildingId });
+
+                    const subLabelDiv = document.createElement('div');
+                    subLabelDiv.className = `${info.css}-sub`;
+                    subLabelDiv.textContent = info.text;
+                    subLabelDiv.dataset.name = info.name;
+                    subLabelDiv.addEventListener('click', clickHandler);
+                    document.body.appendChild(subLabelDiv);
+                    this.subCameraBuildingLabels.push({ position: anchorPosition.clone().add(offset), label: subLabelDiv, type: info.type, buildingId: buildingId });
+                };
+
+                const keikanInfo = this.keikanData.get(data.gmlId);
+                if (keikanInfo && keikanInfo['表示名称']) {
+                    createLabel({ type: 'keikan', text: '景', name: keikanInfo['表示名称'], css: 'keikan-label' });
+                }
+                
+                const bunkazaiInfo = this.bunkazaiData.get(data.gmlId);
+                if (bunkazaiInfo && bunkazaiInfo['名称']) {
+                    createLabel({ type: 'bunkazai', text: '文', name: bunkazaiInfo['名称'], css: 'bunkazai-label' });
+                }
+                
+                const attributes = this.buildingAttributes[buildingId];
+                if (attributes && this.kyomachiyaGmlIds.has(data.gmlId)) {
+                    const height = parseFloat(attributes.measuredHeight);
+                    if (!isNaN(height) && height < 10.0) {
+                        createLabel({ type: 'kyomachiya', text: '町', name: '京町家', css: 'kyomachiya-label' });
+                    }
+                }
+            });
+        }
+
+        lonLatToTile(lon, lat, zoom) {
+            const x = Math.floor((lon / 180 + 1) * Math.pow(2, zoom) / 2);
+            const y = Math.floor((-Math.log(Math.tan((45 + lat / 2) * Math.PI / 180)) + Math.PI) * Math.pow(2, zoom) / (2 * Math.PI));
+            return { x, y };
+        }
+        
+        tileToLonLat(x, y, zoom) {
+            const n = Math.pow(2, zoom);
+            const lon_deg = x / n * 360.0 - 180.0;
+            const lat_rad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n)));
+            const lat_deg = lat_rad * 180.0 / Math.PI;
+            return { lon: lon_deg, lat: lat_deg };
+        }
+        
+        setupMapSelection(openModalCallback) {
+            this.toggleMapBtn.addEventListener('click', () => {
+                openModalCallback(document.getElementById('map-content-wrapper'));
+            });
+
+            const buttons = document.querySelectorAll('.map-select-btn');
+            const updateButtons = () => {
+                buttons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.layer === this.currentMapLayer);
+                });
+            };
+            
+            buttons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const newLayer = e.target.dataset.layer;
+                    if (newLayer !== this.currentMapLayer) {
+                        this.currentMapLayer = newLayer;
+                        this.loadMapTiles();
+                        updateButtons();
+                    }
+                });
+            });
+
+            updateButtons();
+        }
+
+        async loadMapTiles() {
+            if (this.mapGroup) {
+                this.scene.remove(this.mapGroup);
+                this.mapGroup.traverse(child => {
+                    if (child.isMesh || child.isLine) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (child.material.uniforms && child.material.uniforms.tMap.value) {
+                                child.material.uniforms.tMap.value.dispose();
+                            }
+                            child.material.dispose();
+                        }
+                    }
+                });
+            }
+            this.kodoInteractiveObjects = [];
+            this.hoveredKodoPolygon = null;
+
+            const newMapGroup = new THREE.Group();
+            newMapGroup.name = "GroundMap";
+            this.mapGroup = newMapGroup;
+            this.scene.add(this.mapGroup);
+
+            const centerMeters = this.wgs84_to_jgd2011.forward([this.MAP_CENTER_LON, this.MAP_CENTER_LAT]);
+
+            const layerInfo = this.mapLayers[this.currentMapLayer];
+            if (!layerInfo) {
+                console.error(`レイヤー情報が見つかりません: ${this.currentMapLayer}`);
+                return;
+            }
+            
+            this._updateBuildingModelsVisibility(this.currentMapLayer);
+            const textureLoader = new THREE.TextureLoader();
+
+            try {
+                if (this.currentMapLayer === 'kodo') {
+                    await this._loadRoadGeojsonIfNeeded();
+
+                    const [districtData] = await Promise.all([
+                        fetch('../gion_asset/用途地域＋高度地区.geojson').then(res => res.json())
+                    ]);
+                    const roadData = this.roadGeojsonData;
+
+                    const roadVertices = [];
+                    roadData.features.forEach(feature => {
+                        if (!feature.geometry || feature.geometry.type !== 'MultiLineString') return;
+                        feature.geometry.coordinates.forEach(lineCoords => {
+                            for (let i = 0; i < lineCoords.length - 1; i++) {
+                                const startCoord = lineCoords[i];
+                                const endCoord = lineCoords[i + 1];
+                                roadVertices.push(startCoord[0] - centerMeters[0], 0.3, -(startCoord[1] - centerMeters[1]));
+                                roadVertices.push(endCoord[0] - centerMeters[0], 0.3, -(endCoord[1] - centerMeters[1]));
+                            }
+                        });
+                    });
+                    const roadGeometry = new THREE.BufferGeometry();
+                    roadGeometry.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+                    const roadMaterial = new THREE.LineBasicMaterial({ color: 0x808080 });
+                    const roadLineSegments = new THREE.LineSegments(roadGeometry, roadMaterial);
+                    this.mapGroup.add(roadLineSegments);
+
+                    const colorMap = {
+                        '12m 第1種高度地区': new THREE.Color(0xADD8E6), '12m 第2種高度地区': new THREE.Color(0xADD8E6),
+                        '12m 第3種高度地区': new THREE.Color(0xADD8E6), '12m 第4種高度地区': new THREE.Color(0xADD8E6), 
+                        '15m 第1種高度地区': new THREE.Color(0x00BFFF), '15m 第2種高度地区': new THREE.Color(0x00BFFF),
+                        '15m 第3種高度地区': new THREE.Color(0x00BFFF), '15m 第4種高度地区': new THREE.Color(0x00BFFF),
+                        '20m 第1種高度地区': new THREE.Color(0xFFFF00), '20m 第2種高度地区': new THREE.Color(0xFFFF00),
+                        '20m 第3種高度地区': new THREE.Color(0xFFFF00), '20m 第4種高度地区': new THREE.Color(0xFFFF00),
+                        '25m 高度地区': new THREE.Color(0xEE7800), '31m 第1種高度地区': new THREE.Color(0xFFC0CB)
+                    };
+
+                    districtData.features.forEach(feature => {
+                        if (!feature.geometry || !feature.properties['高度_1']) return;
+                        const material = new THREE.MeshBasicMaterial({
+                            color: colorMap[feature.properties['高度_1']] || 0xCCCCCC,
+                            side: THREE.DoubleSide, transparent: true, opacity: 0.5
+                        });
+                        const polygons = feature.geometry.type === 'MultiPolygon' ? feature.geometry.coordinates : [feature.geometry.coordinates];
+                        
+                        polygons.forEach(polygonCoords => {
+                            try {
+                                const shape = new THREE.Shape();
+                                const outerRing = polygonCoords[0];
+                                if (!outerRing || outerRing.length < 3) return;
+
+                                shape.moveTo(outerRing[0][0] - centerMeters[0], outerRing[0][1] - centerMeters[1]);
+                                outerRing.slice(1).forEach(coord => shape.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                
+                                polygonCoords.slice(1).forEach(holeRing => {
+                                    if (!holeRing || holeRing.length < 3) return;
+                                    const holePath = new THREE.Path();
+                                    holePath.moveTo(holeRing[0][0] - centerMeters[0], holeRing[0][1] - centerMeters[1]);
+                                    holeRing.slice(1).forEach(coord => holePath.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                    shape.holes.push(holePath);
+                                });
+
+                                const geometry = new THREE.ShapeGeometry(shape);
+                                const mesh = new THREE.Mesh(geometry, material);
+                                mesh.position.y = 0.1; 
+                                mesh.rotation.x = -Math.PI / 2;
+                                this.mapGroup.add(mesh);
+                                
+                                mesh.userData.originalColor = material.color.clone();
+
+                                const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+                                const wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), lineMaterial);
+                                wireframe.position.copy(mesh.position);
+                                wireframe.rotation.copy(mesh.rotation);
+                                wireframe.position.y += 0.1;
+                                this.mapGroup.add(wireframe);
+                                
+                                geometry.computeBoundingBox();
+                                const centroid = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(centroid);
+                                const originalDistrictName = feature.properties['高度_1'];
+                                if (originalDistrictName) {
+                                    const labelText = this._formatKodoDistrictName(originalDistrictName);
+                                    const labelGroup = this._createDistrictLabel(labelText, { fontsize: 200, scale: 4});
+                                    labelGroup.position.set(centroid.x, 40, -centroid.y); 
+                                    labelGroup.name = 'district_label_group';
+                                    labelGroup.layers.set(2);
+                                    
+                                    this.mapGroup.add(labelGroup);
+                                    
+                                    labelGroup.userData.polygonMesh = mesh;
+                                    this.kodoInteractiveObjects.push(labelGroup.children[0]);
+                                }
+
+                            } catch (e) { console.warn("ポリゴンの生成に失敗しました:", e); }
+                        });
+                    });
+
+                } else if (this.currentMapLayer === 'youto') {
+                    
+                    await this._loadRoadGeojsonIfNeeded();
+
+                    const [districtData] = await Promise.all([
+                        fetch('../gion_asset/用途地域＋高度地区.geojson').then(res => res.json())
+                    ]);
+                    const roadData = this.roadGeojsonData;
+
+                    const roadVertices = [];
+                    roadData.features.forEach(feature => {
+                        if (!feature.geometry || feature.geometry.type !== 'MultiLineString') return;
+                        feature.geometry.coordinates.forEach(lineCoords => {
+                            for (let i = 0; i < lineCoords.length - 1; i++) {
+                                const startCoord = lineCoords[i];
+                                const endCoord = lineCoords[i + 1];
+                                roadVertices.push(startCoord[0] - centerMeters[0], 0.3, -(startCoord[1] - centerMeters[1]));
+                                roadVertices.push(endCoord[0] - centerMeters[0], 0.3, -(endCoord[1] - centerMeters[1]));
+                            }
+                        });
+                    });
+                    const roadGeometry = new THREE.BufferGeometry();
+                    roadGeometry.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+                    const roadMaterial = new THREE.LineBasicMaterial({ color: 0x808080 });
+                    const roadLineSegments = new THREE.LineSegments(roadGeometry, roadMaterial);
+                    this.mapGroup.add(roadLineSegments);
+
+                    const colorMap = {
+                        '商業地域': new THREE.Color(0xFF1493),
+                        '近隣商業地域': new THREE.Color(0xFFB6C1),
+                        '第二種中高層住居専用地域': new THREE.Color(0xADFF2F),
+                        '第一種住居地域': new THREE.Color(0xFFFFE0),
+                        '準工業地域': new THREE.Color(0xADD8E6),
+                        '第二種住居地域': new THREE.Color(0xB8860B)
+                    };
+
+                    districtData.features.forEach(feature => {
+                        if (!feature.geometry || !feature.properties['用途_1']) return;
+                        
+                        const material = new THREE.MeshBasicMaterial({
+                            color: colorMap[feature.properties['用途_1']] || 0xCCCCCC,
+                            side: THREE.DoubleSide, transparent: true, opacity: 0.5
+                        });
+                        const polygons = feature.geometry.type === 'MultiPolygon' ? feature.geometry.coordinates : [feature.geometry.coordinates];
+                        
+                        polygons.forEach(polygonCoords => {
+                            try {
+                                const shape = new THREE.Shape();
+                                const outerRing = polygonCoords[0];
+                                if (!outerRing || outerRing.length < 3) return;
+
+                                shape.moveTo(outerRing[0][0] - centerMeters[0], outerRing[0][1] - centerMeters[1]);
+                                outerRing.slice(1).forEach(coord => shape.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                
+                                polygonCoords.slice(1).forEach(holeRing => {
+                                    if (!holeRing || holeRing.length < 3) return;
+                                    const holePath = new THREE.Path();
+                                    holePath.moveTo(holeRing[0][0] - centerMeters[0], holeRing[0][1] - centerMeters[1]);
+                                    holeRing.slice(1).forEach(coord => holePath.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                    shape.holes.push(holePath);
+                                });
+
+                                const geometry = new THREE.ShapeGeometry(shape);
+                                const mesh = new THREE.Mesh(geometry, material);
+                                mesh.position.y = 0.1; 
+                                mesh.rotation.x = -Math.PI / 2;
+                                this.mapGroup.add(mesh);
+                                
+                                mesh.userData.originalColor = material.color.clone();
+
+                                const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+                                const wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), lineMaterial);
+                                wireframe.position.copy(mesh.position);
+                                wireframe.rotation.copy(mesh.rotation);
+                                wireframe.position.y += 0.1;
+                                this.mapGroup.add(wireframe);
+                                
+                                geometry.computeBoundingBox();
+                                const centroid = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(centroid);
+                                const originalDistrictName = feature.properties['用途_1'];
+                                if (originalDistrictName) {
+                                    const labelGroup = this._createDistrictLabel(originalDistrictName, { fontsize: 150, scale: 2.5 });
+                                    labelGroup.position.set(centroid.x, 40, -centroid.y); 
+                                    labelGroup.name = 'district_label_group';
+                                    labelGroup.layers.set(2);
+                                    
+                                    this.mapGroup.add(labelGroup);
+                                    
+                                    labelGroup.userData.polygonMesh = mesh;
+                                    this.kodoInteractiveObjects.push(labelGroup.children[0]);
+                                }
+
+                            } catch (e) { console.warn("ポリゴンの生成に失敗しました:", e); }
+                        });
+                    });
+
+
+                } else if (this.currentMapLayer === 'keikan') {
+                    
+                    await this._loadRoadGeojsonIfNeeded();
+                    
+                    const [districtData] = await Promise.all([
+                        fetch('../gion_asset/京町家保全継承地区.geojson').then(res => res.json())
+                    ]);
+                    const roadData = this.roadGeojsonData;
+
+                    const roadVertices = [];
+                    roadData.features.forEach(feature => {
+                        if (!feature.geometry || feature.geometry.type !== 'MultiLineString') return;
+                        feature.geometry.coordinates.forEach(lineCoords => {
+                            for (let i = 0; i < lineCoords.length - 1; i++) {
+                                const startCoord = lineCoords[i];
+                                const endCoord = lineCoords[i + 1];
+                                roadVertices.push(startCoord[0] - centerMeters[0], 0.3, -(startCoord[1] - centerMeters[1]));
+                                roadVertices.push(endCoord[0] - centerMeters[0], 0.3, -(endCoord[1] - centerMeters[1]));
+                            }
+                        });
+                    });
+                    const roadGeometry = new THREE.BufferGeometry();
+                    roadGeometry.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+                    const roadMaterial = new THREE.LineBasicMaterial({ color: 0x808080 });
+                    const roadLineSegments = new THREE.LineSegments(roadGeometry, roadMaterial);
+                    this.mapGroup.add(roadLineSegments);
+
+                    const material = new THREE.MeshBasicMaterial({
+                        color: 0xFFFF00,
+                        side: THREE.DoubleSide, transparent: true, opacity: 0.5
+                    });
+
+                    districtData.features.forEach(feature => {
+                        if (!feature.geometry || !feature.properties['地区名']) return;
+                        
+                        const polygons = feature.geometry.type === 'MultiPolygon' ? feature.geometry.coordinates : [feature.geometry.coordinates];
+                        
+                        polygons.forEach(polygonCoords => {
+                            try {
+                                const shape = new THREE.Shape();
+                                const outerRing = polygonCoords[0];
+                                if (!outerRing || outerRing.length < 3) return;
+
+                                shape.moveTo(outerRing[0][0] - centerMeters[0], outerRing[0][1] - centerMeters[1]);
+                                outerRing.slice(1).forEach(coord => shape.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                
+                                polygonCoords.slice(1).forEach(holeRing => {
+                                    if (!holeRing || holeRing.length < 3) return;
+                                    const holePath = new THREE.Path();
+                                    holePath.moveTo(holeRing[0][0] - centerMeters[0], holeRing[0][1] - centerMeters[1]);
+                                    holeRing.slice(1).forEach(coord => holePath.lineTo(coord[0] - centerMeters[0], coord[1] - centerMeters[1]));
+                                    shape.holes.push(holePath);
+                                });
+
+                                const geometry = new THREE.ShapeGeometry(shape);
+                                const mesh = new THREE.Mesh(geometry, material.clone());
+                                mesh.position.y = 0.1; 
+                                mesh.rotation.x = -Math.PI / 2;
+                                this.mapGroup.add(mesh);
+                                
+                                mesh.userData.originalColor = material.color.clone();
+
+                                const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+                                const wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), lineMaterial);
+                                wireframe.position.copy(mesh.position);
+                                wireframe.rotation.copy(mesh.rotation);
+                                wireframe.position.y += 0.1;
+                                this.mapGroup.add(wireframe);
+                                
+                                geometry.computeBoundingBox();
+                                const centroid = new THREE.Vector3();
+                                geometry.boundingBox.getCenter(centroid);
+                                const originalDistrictName = feature.properties['地区名'];
+                                if (originalDistrictName) {
+                                    const labelGroup = this._createDistrictLabel(originalDistrictName, { fontsize: 150, scale: 2.5 });
+                                    labelGroup.position.set(centroid.x, 40, -centroid.y); 
+                                    labelGroup.name = 'district_label_group';
+                                    labelGroup.layers.set(2);
+                                    
+                                    this.mapGroup.add(labelGroup);
+                                    
+                                    labelGroup.userData.polygonMesh = mesh;
+                                    this.kodoInteractiveObjects.push(labelGroup.children[0]);
+                                }
+
+                            } catch (e) { console.warn("ポリゴンの生成に失敗しました:", e); }
+                        });
+                    });
+                
+                } else if (layerInfo.type === 'image') {
+                    const texture = await textureLoader.loadAsync(layerInfo.url);
+                    const geometry = new THREE.PlaneGeometry(5000, 5000);
+                    const material = new THREE.ShaderMaterial({
+                        vertexShader: document.getElementById('mapTileVertexShader').textContent,
+                        fragmentShader: document.getElementById('mapTileFragmentShader').textContent,
+                        uniforms: { tMap: { value: texture }, uRadius: { value: this.SKY_DOME_RADIUS }, uFadeDistance: { value: 300.0 } },
+                        transparent: true, polygonOffset: true, polygonOffsetFactor: -1.0, polygonOffsetUnits: -1.0
+                    });
+                    const plane = new THREE.Mesh(geometry, material);
+                    plane.rotation.x = -Math.PI / 2;
+                    this.mapGroup.add(plane);
+
+                } else if (layerInfo.type === 'tile') {
+                    const centerTile = this.lonLatToTile(this.MAP_CENTER_LON, this.MAP_CENTER_LAT, this.MAP_ZOOM_LEVEL);
+                    const tileSideMetersApprox = (Math.cos(this.MAP_CENTER_LAT * Math.PI / 180) * 2 * Math.PI * 6378137) / Math.pow(2, this.MAP_ZOOM_LEVEL);
+                    const tileOffset = Math.ceil((this.SKY_DOME_RADIUS) / tileSideMetersApprox);
+                    
+                    const promises = [];
+                    for (let i = -tileOffset; i <= tileOffset; i++) {
+                        for (let j = -tileOffset; j <= tileOffset; j++) {
+                            const tileX = centerTile.x + i, tileY = centerTile.y + j;
+                            const tileUrl = layerInfo.url.replace('{z}', this.MAP_ZOOM_LEVEL).replace('{x}', tileX).replace('{y}', tileY);
+                            
+                            const promise = textureLoader.loadAsync(tileUrl).then(texture => {
+                                const v0_jgd = this.wgs84_to_jgd2011.forward(Object.values(this.tileToLonLat(tileX, tileY, this.MAP_ZOOM_LEVEL)));
+                                const v1_jgd = this.wgs84_to_jgd2011.forward(Object.values(this.tileToLonLat(tileX, tileY + 1, this.MAP_ZOOM_LEVEL)));
+                                const v2_jgd = this.wgs84_to_jgd2011.forward(Object.values(this.tileToLonLat(tileX + 1, tileY, this.MAP_ZOOM_LEVEL)));
+                                const v3_jgd = this.wgs84_to_jgd2011.forward(Object.values(this.tileToLonLat(tileX + 1, tileY + 1, this.MAP_ZOOM_LEVEL)));
+
+                                const vertices = new Float32Array([
+                                    v0_jgd[0] - centerMeters[0], 0, -(v0_jgd[1] - centerMeters[1]),
+                                    v1_jgd[0] - centerMeters[0], 0, -(v1_jgd[1] - centerMeters[1]),
+                                    v2_jgd[0] - centerMeters[0], 0, -(v2_jgd[1] - centerMeters[1]),
+                                    v3_jgd[0] - centerMeters[0], 0, -(v3_jgd[1] - centerMeters[1])
+                                ]);
+                                
+                                const geometry = new THREE.BufferGeometry();
+                                geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                                geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 1, 1, 0]), 2));
+                                geometry.setIndex(new THREE.BufferAttribute(new Uint16Array([0, 1, 2, 2, 1, 3]), 1));
+                                
+                                const material = new THREE.ShaderMaterial({
+                                    vertexShader: document.getElementById('mapTileVertexShader').textContent,
+                                    fragmentShader: document.getElementById('mapTileFragmentShader').textContent,
+                                    uniforms: { tMap: { value: texture }, uRadius: { value: this.SKY_DOME_RADIUS }, uFadeDistance: { value: 300.0 }},
+                                    transparent: true
+                                });
+                                const plane = new THREE.Mesh(geometry, material);
+                                this.mapGroup.add(plane);
+                            }).catch(err => {});
+                            promises.push(promise);
+                        }
+                    }
+                    await Promise.all(promises);
+                }
+            } catch (err) {
+                console.error(`地図レイヤー '${this.currentMapLayer}' の読み込み中にエラー:`, err);
+            }
+            console.log(`地図レイヤー '${this.currentMapLayer}' の表示を更新しました。`);
+        }
+
+        _createDistrictLabel(message, options = {}) {
+            const { fontface = 'Arial', textColor = '#000000', backgroundColor = 'rgba(255, 255, 255, 0.7)', borderRadius = 20, padding = 20, scale = 4 } = options;
+
+            let fontsize;
+            if (options.fontsize) {
+                fontsize = options.fontsize;
+            } else {
+                fontsize = 120;
+                if (message.length > 8) fontsize = 70;
+                else if (message.length > 4) fontsize = 90;
+            }
+
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            context.font = `Bold ${fontsize}px ${fontface}`;
+
+            const metrics = context.measureText(message);
+            const textWidth = metrics.width;
+            const textHeight = fontsize;
+
+            const backgroundWidth = textWidth + padding * 2;
+            const backgroundHeight = textHeight + padding * 2;
+
+            canvas.width = backgroundWidth;
+            canvas.height = backgroundHeight;
+
+            context.font = `Bold ${fontsize}px ${fontface}`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+
+            context.fillStyle = backgroundColor;
+            context.beginPath();
+            context.moveTo(borderRadius, 0);
+            context.lineTo(canvas.width - borderRadius, 0);
+            context.arcTo(canvas.width, 0, canvas.width, borderRadius, borderRadius);
+            context.lineTo(canvas.width, canvas.height - borderRadius);
+            context.arcTo(canvas.width, canvas.height, canvas.width - borderRadius, canvas.height, borderRadius);
+            context.lineTo(borderRadius, canvas.height);
+            context.arcTo(0, canvas.height, 0, canvas.height - borderRadius, borderRadius);
+            context.lineTo(0, borderRadius);
+            context.arcTo(0, 0, borderRadius, 0, borderRadius);
+            context.closePath();
+            context.fill();
+
+            context.fillStyle = textColor;
+            context.fillText(message, canvas.width / 2, canvas.height / 2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            const textMaterial = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+            });
+
+            const textPlaneWidth = backgroundWidth / scale;
+            const textPlaneHeight = backgroundHeight / scale;
+            const textGeometry = new THREE.PlaneGeometry(textPlaneWidth, textPlaneHeight);
+            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+
+            const group = new THREE.Group();
+            group.add(textMesh);
+
+            return group;
+        }
+
+
+        _formatKodoDistrictName(originalName) {
+            if (!originalName) return '';
+            const meterMatch = originalName.match(/^(\d+m)/);
+            const typeMatch = originalName.match(/第(\d)種/);
+            const meterPart = meterMatch ? meterMatch[1] : null;
+            const typePart = typeMatch ? typeMatch[1] : null;
+            if (meterPart && typePart) return `${meterPart}-${typePart}`;
+            if (meterPart) return meterPart;
+            return originalName;
+        }
+        
+        initializeSceneObjects() {
+            this.addSkyDome();
+            this.addStandardObjects();
+            this.addYamahokoObjects();
+        }
+        
+        addStandardObjects() {
+        }
+
+        addSkyDome() {
+            const skyGeometry = new THREE.SphereGeometry(this.SKY_DOME_RADIUS, 64, 15);
+            const skyMaterial = new THREE.ShaderMaterial({
+                vertexShader: document.getElementById('skyVertexShader').textContent,
+                fragmentShader: document.getElementById('skyFragmentShader').textContent,
+                uniforms: {
+                    uTopColor: { value: new THREE.Color(0x87CEEB) },
+                    uBottomColor: { value: new THREE.Color(0xFFFFFF) }
+                },
+                side: THREE.BackSide,
+                transparent: true,
+                depthWrite: false
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            this.scene.add(sky);
+        }
+
+        setupSubCameras() {
+            this.subCameraData.forEach((data, index) => {
+                const subCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 8000);
+
+                if (data.type !== 'chase') {
+                     if (index === 0) { 
+                        const shijoKawaramachiPos = this.relayPoints['四条河原町'];
+                        if (shijoKawaramachiPos) {
+                            subCamera.position.set(
+                                shijoKawaramachiPos.x + 20,
+                                shijoKawaramachiPos.y + 20,
+                                shijoKawaramachiPos.z + 20
+                            );
+                            subCamera.lookAt(new THREE.Vector3(
+                                subCamera.position.x - 1,
+                                subCamera.position.y,
+                                subCamera.position.z - 1
+                            ));
+                        } else {
+                            console.warn('「四条河原町」の座標が見つかりません。');
+                        }
+                    } else if (data.position) {
+                        subCamera.position.copy(data.position);
+                        if (data.lookAtTargetName) {
+                            const lookAtTarget = this.relayPoints[data.lookAtTargetName];
+                            if (lookAtTarget) {
+                                subCamera.lookAt(lookAtTarget);
+                            } else {
+                                console.warn(`Sub-camera target '${data.lookAtTargetName}' not found in relayPoints.`);
+                                subCamera.lookAt(subCamera.position.x, subCamera.position.y, subCamera.position.z - 1);
+                            }
+                        }
+                    }
+                }
+                this.subCameras.push(subCamera);
+            });
+        }
+
+        setupUI() {
+            this.calculateSimulationEndTime();
+            
+            const isLikelyPhone = () => {
+                const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                if (!isTouch) return false;
+                const smallerDimension = Math.min(window.screen.width, window.screen.height);
+                const phoneBreakpoint = 650;
+                return smallerDimension <= phoneBreakpoint;
+            };
+
+            if (isLikelyPhone()) {
+                this.isSubCameraVisible = false;
+                document.body.classList.add('is-phone');
+            }
+            
+            let currentPanelContent = null;
+            let originalParent = null;
+
+            const openPanelModal = (contentElement) => {
+                if (!contentElement) return;
+                currentPanelContent = contentElement;
+                originalParent = contentElement.parentNode;
+                contentElement.style.display = 'block';
+                this.panelOverlayBody.appendChild(contentElement);
+                this.panelOverlay.classList.add('visible');
+            };
+
+            const closePanelModal = () => {
+                if (currentPanelContent && originalParent) {
+                    currentPanelContent.style.display = 'none';
+                    originalParent.appendChild(currentPanelContent);
+                }
+                this.panelOverlay.classList.remove('visible');
+                currentPanelContent = null;
+                originalParent = null;
+            };
+
+            this.panelOverlayCloseBtn.addEventListener('click', closePanelModal);
+            this.panelOverlay.addEventListener('click', (e) => {
+                if (e.target === this.panelOverlay) {
+                    closePanelModal();
+                }
+            });
+
+            this.setupControls();
+            this.setupVisibilityControls(openPanelModal);
+            this.setupClickEvents();
+            this.setupCameraSwitchUI();
+            this.setupMapSelection(openPanelModal);
+            this.setupCharacterModeControls();
+            this.setupBuildingSearchModeControls(openPanelModal);
+        }
+
+        setupBuildingSearchModeControls(openModalCallback) {
+            this.buildingSearchToggleBtn.addEventListener('click', () => {
+                openModalCallback(document.getElementById('building-search-content-wrapper'));
+            });
+
+            this.searchModeCheckboxes.addEventListener('change', (e) => {
+                if (e.target.type === 'checkbox') {
+                    const mode = e.target.value;
+                    if (e.target.checked) {
+                        this.activeSearchModes.add(mode);
+                    } else {
+                        this.activeSearchModes.delete(mode);
+                    }
+                    this._updateLabelVisibility();
+                }
+            });
+        }
+
+        _updateLabelVisibility() {
+            const allLabels = [...this.buildingLabels, ...this.subCameraBuildingLabels];
+            allLabels.forEach(item => item.label.style.display = 'none');
+
+            if (this.activeSearchModes.size === 0) return;
+
+            const groupedLabels = new Map();
+            allLabels.forEach(item => {
+                const key = item.position.toArray().join(',');
+                if (!groupedLabels.has(key)) {
+                    groupedLabels.set(key, []);
+                }
+                groupedLabels.get(key).push(item);
+            });
+
+            groupedLabels.forEach(group => {
+                let visibleLabel = null;
+                if (this.activeSearchModes.has('keikan') && group.some(l => l.type === 'keikan')) {
+                    visibleLabel = group.find(l => l.type === 'keikan');
+                } else if (this.activeSearchModes.has('bunkazai') && group.some(l => l.type === 'bunkazai')) {
+                    visibleLabel = group.find(l => l.type === 'bunkazai');
+                } else if (this.activeSearchModes.has('kyomachiya') && group.some(l => l.type === 'kyomachiya')) {
+                    visibleLabel = group.find(l => l.type === 'kyomachiya');
+                }
+                
+                if (this.activeSearchModes.size > 1) {
+                     if (visibleLabel) visibleLabel.label.style.display = 'block';
+                } else {
+                     group.forEach(labelItem => {
+                         if(this.activeSearchModes.has(labelItem.type)) {
+                             labelItem.label.style.display = 'block';
+                         }
+                     });
+                }
+            });
+        }
+        
+        _updateBuildingModelsVisibility(layerId) {
+            this.interactiveBuildingGroup.visible = false;
+            if (this.buildingModel1946) this.buildingModel1946.visible = false;
+            if (this.buildingModel1975) this.buildingModel1975.visible = false;
+
+            if (layerId === 'ort_USA10') {
+                if (this.buildingModel1946) {
+                    this.buildingModel1946.visible = true;
+                } else {
+                    this.load1946Model();
+                }
+            } else if (layerId === 'gazo1') {
+                if (this.buildingModel1975) {
+                    this.buildingModel1975.visible = true;
+                } else {
+                    this.load1975Model();
+                }
+            } else {
+                this.interactiveBuildingGroup.visible = true;
+            }
+        }
+
+        setupMapSelection(openModalCallback) {
+            this.toggleMapBtn.addEventListener('click', () => {
+                openModalCallback(document.getElementById('map-content-wrapper'));
+            });
+
+            const buttons = document.querySelectorAll('.map-select-btn');
+            const updateButtons = () => {
+                buttons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.layer === this.currentMapLayer);
+                });
+            };
+            
+            buttons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const newLayer = e.target.dataset.layer;
+                    if (newLayer !== this.currentMapLayer) {
+                        this.currentMapLayer = newLayer;
+                        this.loadMapTiles();
+                        updateButtons();
+                    }
+                });
+            });
+
+            updateButtons();
+        }
+
+        setupCameraSwitchUI() {
+            this.subCameraLabel.textContent = this.subCameraData[this.activeSubCameraIndex].name;
+            
+            this.subCameraSwitchBtn.addEventListener('click', () => {
+                this.cameraSelectModal.classList.remove('modal-hidden');
+            });
+            const closeModal = () => this.cameraSelectModal.classList.add('modal-hidden');
+            this.modalCloseBtn.addEventListener('click', closeModal);
+            this.cameraSelectModal.addEventListener('click', (e) => {
+                if (e.target === this.cameraSelectModal) {
+                    closeModal();
+                }
+            });
+            this.cameraSelectList.innerHTML = '';
+            this.subCameraData.forEach((camData, index) => {
+                const li = document.createElement('li');
+                li.textContent = camData.name;
+                li.dataset.index = index;
+                li.addEventListener('click', () => {
+                    const selectedIndex = parseInt(li.dataset.index, 10);
+                    this.activeSubCameraIndex = selectedIndex;
+                    const selectedCamData = this.subCameraData[selectedIndex];
+                    
+                    this.subCameraLabel.textContent = selectedCamData.name;
+
+                    if (!this.disableVideoSyncCheckbox.checked && selectedCamData.youtubeUrl) {
+                        // This block is now effectively disabled as youtubeUrl is removed.
+                    }
+
+                    closeModal();
+                });
+                this.cameraSelectList.appendChild(li);
+            });
+        }
+        
+        timeToMsOffset(timeStr) {
+             if (typeof timeStr !== 'string' || !timeStr.includes(':')) return NaN;
+             const parts = timeStr.split(':').map(Number);
+             if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                 return (parts[0] * 3600 + parts[1] * 60) * 1000;
+             }
+             return NaN;
+        }
+
+        updateTimeDisplay(currentSimTimeOffsetMs) {
+             const totalSeconds = Math.floor(Math.max(0, currentSimTimeOffsetMs) / 1000);
+             if (isNaN(totalSeconds)) return;
+             const hours = Math.floor(totalSeconds / 3600) % 24;
+             const minutes = Math.floor((totalSeconds % 3600) / 60);
+             const seconds = totalSeconds % 60;
+             const formattedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+             
+            if (this.timeDisplay) {
+                this.timeDisplay.textContent = `時刻: ${formattedTime}`;
+            }
+        }
+
+        calculateSimulationEndTime() {
+             let maxEndTimeMs = 0;
+             this.yamahokoData.forEach(yamanoko => {
+                 if (yamanoko.position && yamanoko.position.length > 0) {
+                     const lastTimeStr = Object.values(yamanoko.position[yamanoko.position.length - 1])[0];
+                     const endTimeMs = this.timeToMsOffset(lastTimeStr);
+                     if (!isNaN(endTimeMs)) maxEndTimeMs = Math.max(maxEndTimeMs, endTimeMs);
+                 }
+             });
+             this.simulationEndTimeMs = maxEndTimeMs; 
+        }
+
+        createTimeMarkers() {
+             this.timeMarkersContainer.innerHTML = '';
+             const markerStartTime = this.timeToMsOffset('08:30');
+             const interval = 30 * 60 * 1000;
+             const totalRange = this.simulationEndTimeMs - this.SIMULATION_START_TIME_OFFSET_MS;
+             if (totalRange <= 0) return;
+             for (let time = markerStartTime; time <= this.simulationEndTimeMs; time += interval) {
+                 const percent = ((time - this.SIMULATION_START_TIME_OFFSET_MS) / totalRange) * 100;
+                 if (percent >= 0 && percent <= 100) {
+                     const marker = document.createElement('div');
+                     marker.className = 'time-marker';
+                     const hours = Math.floor(time / 3600000) % 24;
+                     const minutes = Math.floor((time % 3600000) / 60000);
+                     marker.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                     marker.style.left = `${percent}%`;
+                     this.timeMarkersContainer.appendChild(marker);
+                 }
+             }
+        }
+        
+        setupControls() {
+             this.seekBar.min = this.SIMULATION_START_TIME_OFFSET_MS;
+             this.seekBar.max = this.simulationEndTimeMs;
+             this.seekBar.value = this.SIMULATION_START_TIME_OFFSET_MS;
+             this.createTimeMarkers();
+             this.playPauseBtn.addEventListener('click', () => {
+                 this.isPaused = !this.isPaused;
+                 this.playPauseBtn.textContent = this.isPaused ? '再生' : '一時停止';
+                 if (!this.isPaused) {
+                     this.lastTime = performance.now();
+                 }
+             });
+             this.seekBar.addEventListener('mousedown', () => {
+                 this.wasPlayingBeforeSeek = !this.isPaused;
+                 this.isPaused = true;
+                 this.playPauseBtn.textContent = '再生';
+             });
+             this.seekBar.addEventListener('input', () => {
+                 const seekTime = parseFloat(this.seekBar.value);
+                 this.simulationClockTimeMs = seekTime - this.SIMULATION_START_TIME_OFFSET_MS;
+                 this.updateSceneToTime(seekTime);
+             });
+             this.seekBar.addEventListener('change', () => {
+                 if (this.wasPlayingBeforeSeek) {
+                     this.isPaused = false;
+                     this.playPauseBtn.textContent = '一時停止';
+                     this.lastTime = performance.now();
+                 }
+             });
+        }
+        
+        addStandardObjects() {
+        }
+
+        positionLabels(camera, viewport, labels, occlusionArea = null) {
+            const _vector = new THREE.Vector3();
+
+            for (const item of labels) {
+                const { label, mesh, position } = item;
+                
+                if (mesh && !mesh.visible) {
+                    if (label.style.display !== 'none') {
+                        label.style.display = 'none';
+                    }
+                    continue;
+                }
+
+                const position3d = mesh ? mesh.position : position;
+                _vector.copy(position3d);
+                if (mesh) {
+                    const baseOffsetY = 30;
+                    _vector.y += baseOffsetY * mesh.scale.y; 
+                }
+                _vector.project(camera);
+
+                const isInView = _vector.z < 1 && _vector.x >= -1 && _vector.x <= 1 && _vector.y >= -1 && _vector.y <= 1;
+
+                if (isInView) {
+                    const x = viewport.left + ((_vector.x + 1) / 2) * viewport.width;
+                    const y = viewport.top + ((-_vector.y + 1) / 2) * viewport.height;
+
+                    let isOccluded = false;
+                    if (occlusionArea) {
+                        if (x >= occlusionArea.left && x <= (occlusionArea.left + occlusionArea.width) &&
+                            y >= occlusionArea.top && y <= (occlusionArea.top + occlusionArea.height)) {
+                            isOccluded = true;
+                        }
+                    }
+
+                    if (isOccluded) {
+                        if (label.style.display !== 'none') {
+                            label.style.display = 'none';
+                        }
+                        continue;
+                    }
+
+                    const isBuildingLabel = !!item.type;
+                    if (isBuildingLabel) {
+                        if (label.style.display === 'block') {
+                            label.style.left = `${x}px`;
+                            label.style.top = `${y}px`;
+                        }
+                    } else {
+                        if (label.style.display !== 'block') {
+                            label.style.display = 'block';
+                        }
+                        label.style.left = `${x}px`;
+                        label.style.top = `${y}px`;
+                    }
+
+                } else {
+                    if (label.style.display !== 'none') {
+                        label.style.display = 'none';
+                    }
+                }
+            }
+        }        
+
+        updateCameraInfoDisplay() {
+            if (!this.cameraInfoDisplay) return;
+            const pos = this.camera.position;
+            const rot = this.camera.rotation;
+            const distance = this.camera.position.distanceTo(this.controls.target);
+            const toDeg = (rad) => (rad * 180 / Math.PI).toFixed(1);
+            const infoText = 
+`Pos: X:${pos.x.toFixed(1)} Y:${pos.y.toFixed(1)} Z:${pos.z.toFixed(1)}
+Rot: X:${toDeg(rot.x)}° Y:${toDeg(rot.y)}° Z:${toDeg(rot.z)}°
+Dist: ${distance.toFixed(1)}`;
+            this.cameraInfoDisplay.textContent = infoText;
+        }
+
+        updateDynamicCameras() {
+            if (this.subCameras.length === 0) return;
+
+            const activeCamData = this.subCameraData[this.activeSubCameraIndex];
+            const activeCam = this.subCameras[this.activeSubCameraIndex];
+
+            if (activeCamData.type === 'chase' && activeCamData.targetName) {
+                const target = this.yamahokoMeshes.find(y => y.data.name === activeCamData.targetName);
+                if (target && target.mesh) {
+                    const targetMesh = target.mesh;
+
+                    const targetPosition = new THREE.Vector3();
+                    targetMesh.getWorldPosition(targetPosition);
+
+                    const targetQuaternion = new THREE.Quaternion();
+                    targetMesh.getWorldQuaternion(targetQuaternion);
+
+                    const offset = activeCamData.offset.clone();
+                    offset.applyQuaternion(targetQuaternion);
+
+                    const cameraPosition = new THREE.Vector3().addVectors(targetPosition, offset);
+                    activeCam.position.copy(cameraPosition);
+
+                    activeCam.lookAt(targetPosition);
+                }
+            }
+        }
+
+        animate = (currentTime) => {
+             this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+             const delta = this.clock.getDelta();
+
+            if (!this.isPaused) {
+                if (this.lastTime === 0) this.lastTime = currentTime;
+                let deltaTime = currentTime - this.lastTime;
+                this.lastTime = currentTime;
+                if (!isNaN(deltaTime) && deltaTime > 0) {
+                    const speedMultiplier = this.isCharacterMode ? 10 : this.SIMULATION_SPEED_MULTIPLIER;
+                    this.simulationClockTimeMs += deltaTime * speedMultiplier;
+                    const finalSimTimeOffsetMs = this.SIMULATION_START_TIME_OFFSET_MS + this.simulationClockTimeMs;
+                    
+                    if (finalSimTimeOffsetMs >= this.simulationEndTimeMs) {
+                        this.isPaused = true; this.playPauseBtn.textContent = '再生';
+                        this.seekBar.value = this.simulationEndTimeMs;
+                        this.updateSceneToTime(this.simulationEndTimeMs);
+                    } else {
+                        this.seekBar.value = finalSimTimeOffsetMs;
+                        this.updateSceneToTime(finalSimTimeOffsetMs);
+                    }
+                }
+            }
+
+            const leftPanelWidth = 0;
+            const subViewportSize = 320;
+            const mainViewport = { left: leftPanelWidth, top: 0, width: window.innerWidth - leftPanelWidth, height: window.innerHeight };
+            
+            const subViewportRenderer = { left: leftPanelWidth, top: 0, width: subViewportSize, height: subViewportSize };
+            const subViewportLabels = { left: leftPanelWidth, top: window.innerHeight - subViewportSize, width: subViewportSize, height: subViewportSize };
+
+
+             if(this.isCharacterMode) {
+                 const inputs = this.handleCharacterInputs();
+                 this.updateCharacter(delta, inputs);
+                 this.updateCharacterCamera();
+
+                 if (this.characterPositionMarker) {
+                    this.characterPositionMarker.position.set(
+                        this.girlModel.position.x,
+                        50.0, 
+                        this.girlModel.position.z
+                    );
+                 }
+             } else {
+                this.controls.update();
+                this.updateDynamicCameras();
+                this.updateCameraInfoDisplay();
+             }
+
+            if ((this.currentMapLayer === 'kodo' || this.currentMapLayer === 'youto' || this.currentMapLayer === 'keikan') && this.kodoInteractiveObjects.length > 0) {
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.kodoInteractiveObjects, true);
+
+                let intersectedGroup = null;
+                if (intersects.length > 0 && intersects[0].object.parent) {
+                    intersectedGroup = intersects[0].object.parent;
+                }
+
+                if (intersectedGroup && intersectedGroup.userData.polygonMesh) {
+                    const targetPolygon = intersectedGroup.userData.polygonMesh;
+                    if (this.hoveredKodoPolygon !== targetPolygon) {
+                        if (this.hoveredKodoPolygon) {
+                            this.hoveredKodoPolygon.material.color.copy(this.hoveredKodoPolygon.userData.originalColor);
+                        }
+                        this.hoveredKodoPolygon = targetPolygon;
+                        this.hoveredKodoPolygon.material.color.set(0xff0000);
+                    }
+                } else {
+                    if (this.hoveredKodoPolygon) {
+                        this.hoveredKodoPolygon.material.color.copy(this.hoveredKodoPolygon.userData.originalColor);
+                    }
+                    this.hoveredKodoPolygon = null;
+                }
+
+                if(this.mapGroup) {
+                    this.mapGroup.children.forEach(child => {
+                        if (child.name === 'district_label_group') {
+                            child.quaternion.copy(this.camera.quaternion);
+                        }
+                    });
+                }
+            }
+
+            if (this.isCharacterMode) {
+                this.yamahokoLabels.forEach(item => { if (item.label.style.display !== 'none') item.label.style.display = 'none'; });
+                this.pointLabels.forEach(item => { if (item.label.style.display !== 'none') item.label.style.display = 'none'; });
+            } else {
+                this.positionLabels(this.camera, mainViewport, this.yamahokoLabels, subViewportLabels);
+                this.positionLabels(this.camera, mainViewport, this.pointLabels, subViewportLabels);
+            }
+            
+            this.positionLabels(this.camera, mainViewport, this.buildingLabels, subViewportLabels);
+            
+            this.renderer.clear();
+            this.renderer.setScissorTest(true);
+
+            if (this.mapGroup) this.mapGroup.visible = !this.isCharacterMode;
+            if (this.subCameraMapGroup) this.subCameraMapGroup.visible = false;
+            
+            this.yamahokoMeshes.forEach(item => {
+                if (item.mesh.userData.isGltf) {
+                    let scale = 1;
+                    if (!this.isCharacterMode) {
+                        if (item.data.name.includes('鉾')) {
+                            scale = 5;
+                        } else if (item.data.name.includes('山')) {
+                            scale = 10;
+                        }
+                    }
+                    item.mesh.scale.set(scale, scale, scale);
+                }
+            });
+
+            this.renderer.setViewport(mainViewport.left, 0, mainViewport.width, mainViewport.height);
+            this.renderer.setScissor(mainViewport.left, 0, mainViewport.width, mainViewport.height);
+            this.renderer.render(this.scene, this.camera);
+            
+            this.yamahokoMeshes.forEach(item => {
+                if (item.mesh.userData.isGltf) {
+                    item.mesh.scale.set(1, 1, 1);
+                }
+            });
+            
+            if(this.isSubCameraVisible) {
+                this.renderer.setViewport(subViewportRenderer.left, subViewportRenderer.top, subViewportRenderer.width, subViewportRenderer.height);
+                this.renderer.setScissor(subViewportRenderer.left, subViewportRenderer.top, subViewportRenderer.width, subViewportRenderer.height);
+                
+                this.renderer.clear();
+
+                if (this.mapGroup) this.mapGroup.visible = false;
+                if (this.subCameraMapGroup) this.subCameraMapGroup.visible = true;
+
+                if (this.isCharacterMode) {
+                    this.subCameraLabel.textContent = '上空から';
+                    this.subCameraSwitchBtn.style.display = 'none';
+                    
+                    if (this.characterPositionMarker) this.characterPositionMarker.scale.set(3, 3, 3);
+                    this.renderer.render(this.scene, this.topDownCamera);
+                    if (this.characterPositionMarker) this.characterPositionMarker.scale.set(1, 1, 1);
+                } else {
+                    if (this.subCameras.length > 0) {
+                        const activeSubCamera = this.subCameras[this.activeSubCameraIndex];
+                        this.subCameraLabel.textContent = this.subCameraData[this.activeSubCameraIndex].name;
+                        this.subCameraSwitchBtn.style.display = 'block';
+                        
+                        this.positionLabels(activeSubCamera, subViewportLabels, this.subCameraYamahokoLabels);
+                        this.renderer.render(this.scene, activeSubCamera);
+                    }
+                }
+            }
+
+
+            if (this.mapGroup && !this.isCharacterMode) {
+                this.mapGroup.visible = true;
+            }
+            
+            this.renderer.setScissorTest(false);
+            this.cssRenderer.render(this.cssScene, this.camera);
+        };        
+
+        updateSceneToTime = (finalSimTimeOffsetMs) => {
+             this.yamahokoMeshes.forEach(yamanokoObj => {
+                 const yamanoko = yamanokoObj.data;
+                 const mesh = yamanokoObj.mesh;
+                 if (!yamanoko.position || yamanoko.position.length < 2) return;
+                 let foundSegment = false;
+                 for (let i = 0; i < yamanoko.position.length - 1; i++) {
+                     const startPointEntry = yamanoko.position[i];
+                     const endPointEntry = yamanoko.position[i + 1];
+                     const startPointName = Object.keys(startPointEntry)[0];
+                     const endPointName = Object.keys(endPointEntry)[0];
+                     const startTimeOffsetMs = this.timeToMsOffset(Object.values(startPointEntry)[0]);
+                     const endTimeOffsetMs = this.timeToMsOffset(Object.values(endPointEntry)[0]);
+                     if (isNaN(startTimeOffsetMs) || isNaN(endTimeOffsetMs) || startTimeOffsetMs >= endTimeOffsetMs) continue;
+                     if (finalSimTimeOffsetMs >= startTimeOffsetMs && finalSimTimeOffsetMs <= endTimeOffsetMs) {
+                         foundSegment = true;
+                         const segmentDurationMs = endTimeOffsetMs - startTimeOffsetMs;
+                         const elapsedInSegmentMs = finalSimTimeOffsetMs - startTimeOffsetMs;
+                         let t = segmentDurationMs === 0 ? 0 : elapsedInSegmentMs / segmentDurationMs;
+                         t = Math.max(0, Math.min(1, t));
+                         if (this.relayPoints[startPointName] && this.relayPoints[endPointName]) {
+                             const startVec = this.relayPoints[startPointName];
+                             const endVec = this.relayPoints[endPointName];
+                             mesh.position.lerpVectors(startVec, endVec, t);
+
+                             if (this.yamahokoModels.has(yamanoko.name)) {
+                                 const direction = new THREE.Vector3().subVectors(endVec, startVec);
+                                 if (direction.lengthSq() > 0.0001) {
+                                     const lookAtTarget = new THREE.Vector3(
+                                         mesh.position.x + direction.x,
+                                         mesh.position.y,
+                                         mesh.position.z + direction.z
+                                     );
+                                     mesh.lookAt(lookAtTarget);
+                                 }
+                                 mesh.position.y = 0;
+                             }
+                         }
+                         break;
+                     }
+                 }
+                 if (!foundSegment) {
+                     const firstPointTimeOffsetMs = this.timeToMsOffset(Object.values(yamanoko.position[0])[0]);
+                     const lastPointTimeOffsetMs = this.timeToMsOffset(Object.values(yamanoko.position[yamanoko.position.length - 1])[0]);
+                     if (isNaN(firstPointTimeOffsetMs) || isNaN(lastPointTimeOffsetMs)) return;
+                     if (finalSimTimeOffsetMs < firstPointTimeOffsetMs && this.relayPoints[Object.keys(yamanoko.position[0])[0]]) {
+                         mesh.position.copy(this.relayPoints[Object.keys(yamanoko.position[0])[0]]);
+                     } else if (finalSimTimeOffsetMs > lastPointTimeOffsetMs && this.relayPoints[Object.keys(yamanoko.position[yamanoko.position.length - 1])[0]]) {
+                         mesh.position.copy(this.relayPoints[Object.keys(yamanoko.position[yamanoko.position.length - 1])[0]]);
+                     }
+                     if (this.yamahokoModels.has(yamanoko.name)) {
+                         mesh.position.y = 0;
+                     }
+                 }
+             });
+             this.updateTimeDisplay(finalSimTimeOffsetMs);
+        };
+        
+        addYamahokoObjects() {
+            this.yamahokoData.forEach(y => {
+                let mesh;
+                const loadedModel = this.yamahokoModels.get(y.name);
+
+                if (loadedModel) {
+                    mesh = loadedModel.clone();
+                    mesh.userData.isGltf = true;
+
+                    if (y.name === '長刀鉾') {
+                        const box = new THREE.Box3().setFromObject(mesh);
+                        const size = box.getSize(new THREE.Vector3());
+                        const center = box.getCenter(new THREE.Vector3());
+                        
+                        const proxyGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+                        const proxyMaterial = new THREE.MeshBasicMaterial({ visible: false, transparent: true, opacity: 0 });
+                        const proxyMesh = new THREE.Mesh(proxyGeometry, proxyMaterial);
+                        
+                        proxyMesh.position.copy(center);
+                        
+                        this.naginataBokoProxy = proxyMesh;
+                        mesh.add(this.naginataBokoProxy);
+                    }
+                } else {
+                    const geometry = new THREE.BoxGeometry(20, 20, 20);
+                    const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+                    mesh = new THREE.Mesh(geometry, material);
+                    mesh.userData.isGltf = false;
+                }
+
+                mesh.name = y.name;
+                this.scene.add(mesh);
+                this.yamahokoMeshes.push({ data: y, mesh: mesh });
+                if (y.position && y.position.length > 0) {
+                    const firstPoint = this.relayPoints[Object.keys(y.position[0])[0]];
+                    if (firstPoint) mesh.position.copy(firstPoint);
+                }
+
+                const labelDiv = document.createElement('div');
+                labelDiv.className = 'yamahoko-label';
+                labelDiv.textContent = y.name;
+                document.body.appendChild(labelDiv);
+                this.yamahokoLabels.push({ mesh: mesh, label: labelDiv });
+
+                const subLabelDiv = document.createElement('div');
+                subLabelDiv.className = 'yamahoko-label-sub';
+                subLabelDiv.textContent = y.name;
+                document.body.appendChild(subLabelDiv);
+
+                this.subCameraYamahokoLabels.push({ mesh: mesh, label: subLabelDiv });
+            });
+
+            for (const pointName in this.relayPoints) {
+                if (!pointName.includes('基位置')) {
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'point-label';
+                    labelDiv.textContent = pointName;
+                    document.body.appendChild(labelDiv);
+                    this.pointLabels.push({ position: this.relayPoints[pointName], label: labelDiv });
+                }
+            }
+        }        
+
+        setupVisibilityControls(openModalCallback) {
+            const panel = this.visibilityControls;
+            const contentWrapper = panel.querySelector('#visibility-content-wrapper');
+            contentWrapper.innerHTML = '';
+            
+            this.toggleVisibilityBtn = panel.querySelector('#toggle-visibility-btn');
+
+            this.toggleVisibilityBtn.addEventListener('click', () => {
+                openModalCallback(contentWrapper);
+            });
+             const masterControlsContainer = document.createElement('div');
+             masterControlsContainer.id = 'master-visibility-controls';
+             const showAllBtn = document.createElement('button');
+             showAllBtn.textContent = 'すべて表示';
+             showAllBtn.className = 'master-btn';
+             showAllBtn.addEventListener('click', () => {
+                 this.yamahokoMeshes.forEach(item => item.mesh.visible = true);
+                 this.visibilityToggleButtons.forEach(btn => btn.textContent = '非表示');
+             });
+             const hideAllBtn = document.createElement('button');
+             hideAllBtn.textContent = 'すべて非表示';
+             hideAllBtn.className = 'master-btn';
+             hideAllBtn.addEventListener('click', () => {
+                 this.yamahokoMeshes.forEach(item => item.mesh.visible = false);
+                 this.visibilityToggleButtons.forEach(btn => btn.textContent = '表示');
+             });
+             masterControlsContainer.appendChild(showAllBtn);
+             masterControlsContainer.appendChild(hideAllBtn);
+             contentWrapper.appendChild(masterControlsContainer);
+             this.visibilityToggleButtons = [];
+             this.yamahokoData.sort((a, b) => {
+                 const titleA = this.YAMAHOKO_TITLES[a.name] || '';
+                 const titleB = this.YAMAHOKO_TITLES[b.name] || '';
+                 return titleA.localeCompare(titleB, 'ja', { numeric: true });
+             }).forEach(yamanoko => {
+                 const item = this.yamahokoMeshes.find(m => m.data.name === yamanoko.name);
+                 if (!item) return;
+                 const mesh = item.mesh;
+                 const controlContainer = document.createElement('div');
+                 controlContainer.className = 'visibility-item';
+                 const nameContainer = document.createElement('div');
+                 nameContainer.className = 'name-container';
+                 const rankSpan = document.createElement('span');
+                 rankSpan.className = 'rank-column';
+                 rankSpan.textContent = this.YAMAHOKO_TITLES[yamanoko.name] || '';
+                 const nameSpan = document.createElement('span');
+                 nameSpan.className = 'name-column';
+                 nameSpan.textContent = yamanoko.name;
+                 nameContainer.appendChild(rankSpan);
+                 nameContainer.appendChild(nameSpan);
+                 const toggleButton = document.createElement('button');
+                 toggleButton.className = 'visibility-toggle-btn';
+                 toggleButton.textContent = '非表示';
+                 this.visibilityToggleButtons.push(toggleButton);
+                 controlContainer.appendChild(nameContainer);
+                 controlContainer.appendChild(toggleButton);
+                 contentWrapper.appendChild(controlContainer); 
+
+                 toggleButton.addEventListener('click', () => {
+                     mesh.visible = !mesh.visible;
+                     toggleButton.textContent = mesh.visible ? '非表示' : '表示';
+                 });
+             });
+        }
+
+        setupClickEvents() {
+            this.raycaster = new THREE.Raycaster();
+            this.mouse = new THREE.Vector2(1, 1); 
+
+            const closeOverlay = () => {
+                this.infoOverlay.classList.remove('visible');
+                if (this.customBuildingMaterial) {
+                    this.customBuildingMaterial.uniforms.uSelectedID.value = -1.0;
+                }
+            };
+            this.infoOverlayCloseBtn.addEventListener('click', closeOverlay);
+            this.infoOverlay.addEventListener('click', (e) => {
+                if (e.target === this.infoOverlay) {
+                    closeOverlay();
+                }
+            });
+            
+            const handleMouseMove = (event) => {
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            };
+            window.addEventListener('mousemove', handleMouseMove, false);
+
+            window.addEventListener('dblclick', (event) => {
+                if (this.isCharacterMode || this.isSelectingStartPosition) return;
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                
+                const intersectMeshes = this.interactiveBuildingGroup.visible ? this.interactiveMeshes : this.interactiveMeshes1946;
+                const buildingIntersects = this.raycaster.intersectObjects(intersectMeshes, true);
+                if (buildingIntersects.length > 0) {
+                    this.handleBuildingClick(buildingIntersects[0]);
+                }
+            });
+            
+            window.addEventListener('click', (event) => {
+                if (!this.isSelectingStartPosition) return;
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const walkableIntersects = this.raycaster.intersectObjects(this.walkableMeshes, true);
+
+                if (walkableIntersects.length > 0) {
+                    const startPoint = walkableIntersects[0].point.clone();
+                    
+                    this.isSelectingStartPosition = false;
+                    this.setWalkableAreaHighlight(false);
+                    
+                    this.toggleCharacterMode(startPoint, false);
+                }
+            });
+        }
+        handleBuildingClick(intersection) {
+            const idAttribute = intersection.object.geometry.attributes._id;
+            if (!idAttribute) return;
+
+            const clickedID = idAttribute.getX(intersection.face.a);
+            this.customBuildingMaterial.uniforms.uSelectedID.value = clickedID;
+            
+            const attributes = this.buildingAttributes[clickedID];
+            if (attributes) {
+                let infoHtml = `<b>ID:</b> ${clickedID}<br>`;
+                infoHtml += `<b>GmlID:</b> ${attributes.id || '不明'}<br>`;
+                const year = (attributes.yearOfConstruction === "0001" || !attributes.yearOfConstruction) 
+                             ? '不明' 
+                             : `${attributes.yearOfConstruction}年`;
+                infoHtml += `<b>建築年:</b> ${year}<br>`;
+                infoHtml += `<b>計測高さ:</b> ${attributes.measuredHeight !== null ? attributes.measuredHeight + 'm' : '不明'}<br>`;
+                infoHtml += `<b>地上階数:</b> ${attributes.storeysAboveGround !== null ? attributes.storeysAboveGround : '不明'}<br>`;
+                infoHtml += `<b>地下階数:</b> ${attributes.storeysBelowGround !== null ? attributes.storeysBelowGround : '不明'}<br>`;
+                const usage = attributes.usage_jp || attributes.usage || '不明';
+                const structure = attributes.buildingStructureType_jp || attributes.buildingStructureType || '不明';
+                infoHtml += `<b>用途:</b> ${usage}<br>`;
+                infoHtml += `<b>構造種別:</b> ${structure}`;
+
+                this.infoOverlayText.innerHTML = infoHtml;
+                this.infoOverlay.classList.add('visible');
+            }
+        }
+
+        createCustomMaterial() {
+            const vertexShader = document.getElementById('vertexShader').textContent;
+            const fragmentShader = document.getElementById('fragmentShader').textContent;
+            return new THREE.ShaderMaterial({
+                vertexShader, fragmentShader,
+                uniforms: {
+                    uSelectedID: { value: -1.0 },
+                    uBaseColor: { value: new THREE.Color(0xffffff) },
+                    uHighlightColor: { value: new THREE.Color(0x007bff) },
+                },
+                clippingPlanes: this.clippingPlanes,
+                clipIntersection: false
+            });
+        }
+
+        setWalkableAreaHighlight(highlight) {
+            const material = highlight ? this.walkableAreaHighlightMaterial : this.walkableAreaMaterial;
+            this.walkableMeshes.forEach(mesh => {
+                mesh.material = material;
+            });
+        }
+
+        setupCharacterModeControls() {
+            this.characterModeBtn.addEventListener('click', (event) => {
+                if (this.isCharacterMode) {
+                    this.toggleCharacterMode(null, true);
+                } else if (this.isSelectingStartPosition) {
+                    this.isSelectingStartPosition = false;
+                    this.setWalkableAreaHighlight(false);
+                    this.characterModeBtn.textContent = '人物視点';
+                    this.characterModeBtn.classList.remove('active');
+                } else {
+                    this.isSelectingStartPosition = true;
+                    this.setWalkableAreaHighlight(true);
+                    this.characterModeBtn.textContent = '開始地点を選択';
+                    this.characterModeBtn.classList.add('active');
+                }
+                event.currentTarget.blur();
+            });
+            this.keydownListener = (e) => { this.keyState[e.key.toLowerCase()] = true; };
+            this.keyupListener = (e) => { this.keyState[e.key.toLowerCase()] = false; };
+        }
+
+        toggleCharacterMode(startPosition, isExiting = false) {
+            if (isExiting) {
+                this.isCharacterMode = false;
+                
+                if (this.roadAsphaltModel) this.roadAsphaltModel.visible = false;
+                if (this.busBayModel) this.busBayModel.visible = false;
+                if (this.sidewalkModel) this.sidewalkModel.visible = false;
+                if (this.gutterModel) this.gutterModel.visible = false;
+                if (this.roadMarkingModel) this.roadMarkingModel.visible = false;
+
+                if (this.htmlTextPivot) this.htmlTextPivot.visible = true;
+
+                if ((this.currentMapLayer === 'kodo' || this.currentMapLayer === 'youto' || this.currentMapLayer === 'keikan') && this.mapGroup) {
+                    this.mapGroup.children.forEach(child => {
+                        if (child.name === 'district_label_group') {
+                            child.visible = true;
+                        }
+                    });
+                }
+
+                this.characterModeBtn.textContent = '人物視点';
+                this.characterModeBtn.classList.remove('active');
+
+                if (this.initialCameraPosition && this.initialControlsTarget) {
+                    this.camera.position.copy(this.initialCameraPosition);
+                    this.controls.target.copy(this.initialControlsTarget);
+                }
+
+                this.controls.enabled = true;
+                this.girlModel.visible = false;
+                
+                this.camera.near = 10;
+                this.camera.updateProjectionMatrix();
+
+                window.removeEventListener('keydown', this.keydownListener);
+                window.removeEventListener('keyup', this.keyupListener);
+                
+                this.loadMapTiles(); 
+                
+                return;
+            }
+
+            if (!startPosition) return;
+            
+            this.isCharacterMode = true;
+
+            if (this.roadAsphaltModel) this.roadAsphaltModel.visible = true;
+            if (this.busBayModel) this.busBayModel.visible = true;
+            if (this.sidewalkModel) this.sidewalkModel.visible = true;
+            if (this.gutterModel) this.gutterModel.visible = true;
+            if (this.roadMarkingModel) this.roadMarkingModel.visible = true;
+
+            if (this.htmlTextPivot) this.htmlTextPivot.visible = false;
+
+            if (!this.girlModel) {
+                alert('キャラクターモデルが読み込まれていません。');
+                this.isCharacterMode = false;
+                return;
+            }
+            
+            this.characterModeBtn.textContent = '通常視点に戻る';
+            this.characterModeBtn.classList.add('active');
+            
+            this.characterVerticalState = 'GROUNDED';
+            this.flightTween.active = false;
+
+            this.controls.enabled = false;
+            
+            this.camera.near = 1;
+            this.camera.updateProjectionMatrix();
+
+            this.girlModel.position.copy(startPosition);
+            
+            this.targetRotationY = this.camera.rotation.y;
+            this.modelRotationY = this.camera.rotation.y;
+            this.girlModel.rotation.y = this.modelRotationY;
+            
+            this.switchCharacterAnimation('idle');
+            this.girlModel.visible = true;
+            this.keyState = {};
+
+            window.addEventListener('keydown', this.keydownListener);
+            window.addEventListener('keyup', this.keyupListener);
+        }
+        
+        switchCharacterAnimation(name) {
+            if (!this.girlActions[name]) { console.warn(`Animation "${name}" not found!`); return; }
+            const newAction = this.girlActions[name];
+            if (!newAction || this.activeGirlAction === newAction) return;
+            if (this.activeGirlAction) this.activeGirlAction.fadeOut(0.2);
+            newAction.reset().fadeIn(0.2).play();
+            this.activeGirlAction = newAction;
+        }
+
+        handleCharacterInputs() {
+            const inputs = { walk: this.keyState['w'] || this.keyState['arrowup'], turnLeft: this.keyState['a'] || this.keyState['arrowleft'], turnRight: this.keyState['d'] || this.keyState['arrowright'], run: this.keyState[' '] || this.keyState['b'], turnBack: this.keyState['s'] || this.keyState['arrowdown']};
+            
+            const flyInput = this.keyState['h'];
+            const gamepads = navigator.getGamepads();
+            let activeGamepad = null;
+            for (const gp of gamepads) { if (gp && gp.connected && !gp.id.toLowerCase().includes('surface')) { activeGamepad = gp; break; } }
+            
+            let gamepadFlyInput = false;
+            if (activeGamepad) {
+                const dpadUp = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.DPAD_UP]?.pressed;
+                const dpadDown = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.DPAD_DOWN]?.pressed;
+                const dpadLeft = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.DPAD_LEFT]?.pressed;
+                const dpadRight = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.DPAD_RIGHT]?.pressed;
+                const bButton = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.B_BUTTON]?.pressed;
+                gamepadFlyInput = activeGamepad.buttons[this.GAMEPAD_BUTTON_MAP.FLY_BUTTON]?.pressed;
+
+                inputs.walk = inputs.walk || dpadUp;
+                inputs.turnLeft = inputs.turnLeft || dpadLeft;
+                inputs.turnRight = inputs.turnRight || dpadRight;
+                inputs.run = inputs.run || (dpadUp && bButton);
+                inputs.turnBack = inputs.turnBack || dpadDown;
+            }
+
+            if ((flyInput || gamepadFlyInput) && !this.flyButtonPressed) {
+                inputs.flyTrigger = true;
+                this.flyButtonPressed = true;
+            } else {
+                inputs.flyTrigger = false;
+            }
+            if (!flyInput && !gamepadFlyInput) {
+                this.flyButtonPressed = false;
+            }
+
+            if(inputs.turnBack && this.turn180Timer < 0) { this.turn180Timer = 0.0; }
+            if (this.keyState['s']) this.keyState['s'] = false;
+            if (this.keyState['arrowdown']) this.keyState['arrowdown'] = false;
+            return inputs;
+        }
+        
+        updateCharacter(delta, inputs) {
+            if (!this.girlModel || !this.girlMixer) return;
+
+            const groundRunSpeed = 16.0;
+            const groundWalkSpeed = 3.0;
+            const flyHorizontalSpeed = 24.0;
+            const superFlySpeed = 50.0;
+            const turnSpeed = 3.0;
+            const flyTurnSpeed = 5.0; 
+            const groundTurnSpeed = 5.0;
+            const collisionThreshold = this.characterRadius + 0.5;
+            const flyGravity = 30.0;
+            const coyoteTimeThreshold = 0.1;
+
+            if (inputs.flyTrigger && !this.flightTween.active) {
+                if (this.characterVerticalState === 'GROUNDED') {
+                    this.characterVerticalState = 'ASCENDING';
+                    this.flightTween.active = true;
+                    this.flightTween.startTime = this.clock.elapsedTime;
+                    this.flightTween.startY = this.girlModel.position.y;
+                    this.flightTween.endY = 60.0;
+                } else if (this.characterVerticalState === 'HOVERING') {
+                    const groundCheckRay = new THREE.Raycaster(new THREE.Vector3(this.girlModel.position.x, 100, this.girlModel.position.z), new THREE.Vector3(0, -1, 0));
+                    const collidablesForGround = [this.mapGroup, this.interactiveBuildingGroup, ...this.walkableMeshes];
+                    const groundHits = groundCheckRay.intersectObjects(collidablesForGround, true);
+                    
+                    if (groundHits.length > 0) {
+                        this.characterVerticalState = 'DESCENDING';
+                        this.flightTween.active = true;
+                        this.flightTween.startTime = this.clock.elapsedTime;
+                        this.flightTween.startY = this.girlModel.position.y;
+                        this.flightTween.endY = groundHits[0].point.y;
+                    }
+                }
+            }
+
+            if (this.flightTween.active) {
+                const elapsedTime = this.clock.elapsedTime - this.flightTween.startTime;
+                let progress = elapsedTime / this.flightTween.duration;
+                
+                if (progress >= 1.0) {
+                    progress = 1.0;
+                    this.flightTween.active = false;
+                    if (this.characterVerticalState === 'ASCENDING') {
+                        this.characterVerticalState = 'HOVERING';
+                    } else if (this.characterVerticalState === 'DESCENDING') {
+                        this.characterVerticalState = 'GROUNDED';
+                    }
+                }
+                const easedProgress = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                this.girlModel.position.y = THREE.MathUtils.lerp(this.flightTween.startY, this.flightTween.endY, easedProgress);
+            } else {
+                const groundRaycaster = new THREE.Raycaster(this.girlModel.position.clone().add(new THREE.Vector3(0, 0.1, 0)), new THREE.Vector3(0, -1, 0));
+                const collidablesForGround = [this.mapGroup, this.interactiveBuildingGroup, ...this.walkableMeshes];
+                const groundIntersects = groundRaycaster.intersectObjects(collidablesForGround, true);
+                const onGround = groundIntersects.length > 0 && groundIntersects[0].distance < 0.2;
+
+                if (onGround) {
+                    this.coyoteTime = coyoteTimeThreshold;
+                    if(this.characterVerticalState !== 'GROUNDED') {
+                       this.characterVerticalState = 'GROUNDED';
+                    }
+                    const targetY = groundIntersects[0].point.y;
+                    this.girlModel.position.y = THREE.MathUtils.lerp(this.girlModel.position.y, targetY, 0.2);
+                } else {
+                    this.coyoteTime -= delta;
+                    if (this.coyoteTime <= 0 && this.characterVerticalState === 'GROUNDED') {
+                         this.characterVerticalState = 'FALLING';
+                    }
+                    if (this.characterVerticalState === 'FALLING') {
+                        this.girlModel.position.y -= flyGravity * delta;
+                    }
+                }
+            }
+            
+            if (this.turn180Timer >= 0) {
+                const turnDuration = 0.5;
+                this.targetRotationY -= (Math.PI / turnDuration) * delta;
+                this.turn180Timer += delta;
+                if (this.turn180Timer >= turnDuration) this.turn180Timer = -1;
+            } else {
+                 if (inputs.turnLeft) this.targetRotationY += turnSpeed * delta;
+                 if (inputs.turnRight) this.targetRotationY -= turnSpeed * delta;
+            }
+
+            const onGround = this.characterVerticalState === 'GROUNDED';
+            let currentSpeed = 0;
+            let currentAnimation = 'idle';
+
+            if (onGround) {
+                if (inputs.run) {
+                    currentSpeed = groundRunSpeed;
+                    currentAnimation = 'run';
+                } else if (inputs.walk) {
+                    currentSpeed = groundWalkSpeed;
+                    currentAnimation = 'walk1(child)';
+                }
+            } else {
+                currentAnimation = 'fly';
+                if (inputs.run) {
+                    currentSpeed = superFlySpeed;
+                } else if (inputs.walk) {
+                    currentSpeed = flyHorizontalSpeed;
+                }
+            }
+            this.switchCharacterAnimation(currentAnimation);
+            
+            const moveDirection = new THREE.Vector3(Math.sin(this.targetRotationY), 0, Math.cos(this.targetRotationY));
+            let velocity = moveDirection.clone().multiplyScalar(currentSpeed * delta);
+            
+            if (onGround && currentSpeed > 0 && this.walkableMeshes.length > 0) {
+                const characterCenter = this.girlModel.position.clone().add(new THREE.Vector3(0, this.characterHeight / 2, 0));
+                const proposedPosition = this.girlModel.position.clone().add(velocity);
+
+                const downRaycaster = new THREE.Raycaster(
+                    new THREE.Vector3(proposedPosition.x, 100, proposedPosition.z),
+                    new THREE.Vector3(0, -1, 0)
+                );
+                const downIntersections = downRaycaster.intersectObjects(this.walkableMeshes, true);
+                const isOnWalkableSurface = downIntersections.length > 0;
+
+                if (!isOnWalkableSurface) {
+                    const boundaryRaycaster = new THREE.Raycaster(characterCenter, velocity.clone().normalize());
+                    const boundaryIntersections = boundaryRaycaster.intersectObjects(this.walkableMeshes, true);
+
+                    if (boundaryIntersections.length > 0 && boundaryIntersections[0].distance < velocity.length() + collisionThreshold) {
+                        const hitNormal = boundaryIntersections[0].face.normal;
+                        hitNormal.y = 0;
+                        hitNormal.normalize();
+                        velocity.projectOnPlane(hitNormal);
+
+                        const slideDirection = velocity.clone().normalize();
+                        if (slideDirection.lengthSq() > 0) {
+                            const cornerRaycaster = new THREE.Raycaster(characterCenter, slideDirection);
+                            const cornerIntersections = cornerRaycaster.intersectObjects(this.walkableMeshes, true);
+                            if (cornerIntersections.length > 0 && cornerIntersections[0].distance < collisionThreshold) {
+                                velocity.set(0, 0, 0);
+                            }
+                        }
+                    } else {
+                        velocity.set(0, 0, 0);
+                    }
+                }
+            }
+            
+            this.girlModel.position.add(velocity);
+
+            const currentTurnSpeed = onGround ? groundTurnSpeed : flyTurnSpeed;
+            let deltaRotation = this.targetRotationY - this.modelRotationY;
+            while (deltaRotation > Math.PI) deltaRotation -= 2 * Math.PI;
+            while (deltaRotation < -Math.PI) deltaRotation += 2 * Math.PI;
+            this.modelRotationY += deltaRotation * currentTurnSpeed * delta;
+            this.girlModel.rotation.y = this.modelRotationY;
+            
+            if(this.girlMixer) this.girlMixer.update(delta);
+        }
+
+        updateCharacterCamera() {
+            if (!this.girlModel) return;
+
+            const isFlying = this.characterVerticalState !== 'GROUNDED' && this.characterVerticalState !== 'FALLING';
+
+            if (isFlying) {
+                const flyTargetDistance = 12.0;
+                const angle = 45 * (Math.PI / 180);
+                
+                const camHeight = flyTargetDistance * Math.sin(angle);
+                const horizontalDist = flyTargetDistance * Math.cos(angle);
+
+                const camX = this.girlModel.position.x - horizontalDist * Math.sin(this.modelRotationY);
+                const camZ = this.girlModel.position.z - horizontalDist * Math.cos(this.modelRotationY);
+                const camY = this.girlModel.position.y + camHeight;
+
+                this.camera.position.set(camX, camY, camZ);
+                
+                const lookAtTarget = this.girlModel.position.clone();
+                this.camera.lookAt(lookAtTarget);
+
+            } else {
+                const groundTargetHeight = 2.0;
+                const groundTargetDistance = 4.0;
+                
+                const lerpFactor = 0.1;
+                this.currentCameraHeight = THREE.MathUtils.lerp(this.currentCameraHeight, groundTargetHeight, lerpFactor);
+                this.currentCameraDistance = THREE.MathUtils.lerp(this.currentCameraDistance, groundTargetDistance, lerpFactor);
+
+                const idealX = this.girlModel.position.x - this.currentCameraDistance * Math.sin(this.modelRotationY);
+                const idealZ = this.girlModel.position.z - this.currentCameraDistance * Math.cos(this.modelRotationY);
+                const idealPosition = new THREE.Vector3(idealX, this.girlModel.position.y + this.currentCameraHeight, idealZ);
+                
+                this.camera.position.lerp(idealPosition, 0.1);
+                
+                const lookAtPosition = this.girlModel.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+                this.camera.lookAt(lookAtPosition);
+            }
+        }
+    }
+    
+    window.addEventListener('DOMContentLoaded', () => {
+        new GionSimulationApp();
+    });
+</script>
+
+    <div id="dynamic-loading-overlay">
+        <div class="spinner"></div>
+        <p id="dynamic-loading-text">読み込み中...</p>
+    </div>
+
+</body>
+</html>
