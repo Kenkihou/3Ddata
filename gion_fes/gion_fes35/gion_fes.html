@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ35</title>
+    <title>祇園祭 山鉾巡行シミュ35+</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -251,7 +251,11 @@
     white-space: nowrap;
 }
 /* ▲▲▲ ローディング画面のスタイルここまで ▲▲▲ */
-
+        @media (max-width: 500px) and (orientation: portrait) {
+            #loading-animation-container {
+                transform: translateX(-15%);
+            }
+        }
         .ui-panel {
             color: white; background-color: rgba(50, 50, 50, 0.7);
             padding: 10px 15px; border-radius: 5px; 
