@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ35+</title>
+    <title>祇園祭 山鉾巡行シミュ35++</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -3359,7 +3359,7 @@ setupSubCameras() {
             });
         }
 
-        setupViewpointControls() {
+setupViewpointControls() {
             const openModal = () => {
                 this.viewpointList.innerHTML = ''; // リストを初期化
                 Object.keys(this.predefinedViewpoints).forEach(name => {
@@ -3378,7 +3378,13 @@ setupSubCameras() {
                 this.viewpointModal.classList.add('modal-hidden');
             };
 
-            this.viewMoveBtn.addEventListener('click', openModal);
+            // ▼▼▼ 修正箇所: キャンセル処理を追加 ▼▼▼
+            this.viewMoveBtn.addEventListener('click', () => {
+                this.cancelCharacterModeSelection();
+                openModal();
+            });
+            // ▲▲▲ 修正ここまで ▲▲▲
+
             this.viewpointModalCloseBtn.addEventListener('click', closeModal);
             this.viewpointModal.addEventListener('click', (e) => {
                 if (e.target === this.viewpointModal) {
@@ -3398,12 +3404,15 @@ setupSubCameras() {
             }
         }
 
-        setupMinimalModeControls() {
+setupMinimalModeControls() {
             const minimalModeBtn = document.querySelector('#top-left-controls .top-bar-btn:first-child');
             if (minimalModeBtn) {
+                // ▼▼▼ 修正箇所: キャンセル処理を追加 ▼▼▼
                 minimalModeBtn.addEventListener('click', () => {
+                    this.cancelCharacterModeSelection();
                     this.toggleMinimalMode();
                 });
+                // ▲▲▲ 修正ここまで ▲▲▲
             }
         }
 
@@ -3470,9 +3479,12 @@ setupSubCameras() {
         }
 
 setupBuildingSearchModeControls(openModalCallback) {
+            // ▼▼▼ 修正箇所: キャンセル処理を追加 ▼▼▼
             this.buildingSearchToggleBtn.addEventListener('click', () => {
+                this.cancelCharacterModeSelection();
                 openModalCallback(document.getElementById('building-search-content-wrapper'));
             });
+            // ▲▲▲ 修正ここまで ▲▲▲
 
             this.searchModeCheckboxes.addEventListener('change', (e) => {
                 if (e.target.type === 'checkbox') {
@@ -3484,9 +3496,7 @@ setupBuildingSearchModeControls(openModalCallback) {
                     }
                     this._updateLabelVisibility();
                     
-                    // ▼▼▼ この行を追加 ▼▼▼
-                    this.needsRender = true; // ラベルの表示状態が変更されたので、再描画を要求
-                    // ▲▲▲ 追加ここまで ▲▲▲
+                    this.needsRender = true;
                 }
             });
         }
@@ -3550,36 +3560,6 @@ _updateLabelVisibility() {
             // 建築物モデルの表示グループが変更されたので、再描画を要求する
             this.needsRender = true;
             // ▲▲▲ 追加ここまで ▲▲▲
-        }
-
-        setupMapSelection(openModalCallback) {
-            this.toggleMapBtn.addEventListener('click', () => {
-                openModalCallback(document.getElementById('map-content-wrapper'));
-            });
-
-            const buttons = document.querySelectorAll('.map-select-btn');
-            const updateButtons = () => {
-                buttons.forEach(button => {
-                    button.classList.toggle('active', button.dataset.layer === this.currentMapLayer);
-                });
-            };
-            
-            buttons.forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const newLayer = e.target.dataset.layer;
-                    if (newLayer !== this.currentMapLayer) {
-                        this.currentMapLayer = newLayer;
-                        this.loadMapTiles().then(() => {
-                            // ▼▼▼ この行を追加 ▼▼▼
-                            this.needsRender = true; // 地図の読み込みが終わったので、再描画を要求
-                            // ▲▲▲ 追加ここまで ▲▲▲
-                        });
-                        updateButtons();
-                    }
-                });
-            });
-
-            updateButtons();
         }
 
         setupCameraSwitchUI() {
@@ -3674,14 +3654,18 @@ _updateLabelVisibility() {
                  }
              }
         }
-setupVisibilityControls(openModalCallback) {
+
+        setupVisibilityControls(openModalCallback) {
             const panel = document.getElementById('visibility-controls');
             const contentWrapper = panel.querySelector('#visibility-content-wrapper');
             const toggleBtn = panel.querySelector('#toggle-visibility-btn');
 
+            // ▼▼▼ キャンセル処理も含まれた状態の関数です ▼▼▼
             toggleBtn.addEventListener('click', () => {
+                this.cancelCharacterModeSelection();
                 openModalCallback(contentWrapper);
             });
+            // ▲▲▲ ▲▲▲
 
             contentWrapper.innerHTML = ''; 
 
@@ -3718,9 +3702,7 @@ setupVisibilityControls(openModalCallback) {
                     btn.textContent = '非表示';
                     btn.classList.remove('active');
                 });
-                // ▼▼▼ この行を追加 ▼▼▼
                 this.needsRender = true;
-                // ▲▲▲ 追加ここまで ▲▲▲
             });
 
             const hideAllBtn = document.createElement('button');
@@ -3734,9 +3716,7 @@ setupVisibilityControls(openModalCallback) {
                     btn.textContent = '表示';
                     btn.classList.add('active');
                 });
-                // ▼▼▼ この行を追加 ▼▼▼
                 this.needsRender = true;
-                // ▲▲▲ 追加ここまで ▲▲▲
             });
 
             masterControls.appendChild(showAllBtn);
@@ -3774,9 +3754,7 @@ setupVisibilityControls(openModalCallback) {
                     item.object.visible = !item.object.visible;
                     toggleVisibilityBtn.textContent = item.object.visible ? '非表示' : '表示';
                     toggleVisibilityBtn.classList.toggle('active');
-                    // ▼▼▼ この行を追加 ▼▼▼
                     this.needsRender = true;
-                    // ▲▲▲ 追加ここまで ▲▲▲
                 });
 
                 individualToggleButtons.push(toggleVisibilityBtn);
@@ -3784,6 +3762,37 @@ setupVisibilityControls(openModalCallback) {
                 itemDiv.appendChild(toggleVisibilityBtn);
                 contentWrapper.appendChild(itemDiv);
             });
+        }
+
+        setupMapSelection(openModalCallback) {
+            // ▼▼▼ 修正箇所: キャンセル処理を追加 ▼▼▼
+            this.toggleMapBtn.addEventListener('click', () => {
+                this.cancelCharacterModeSelection();
+                openModalCallback(document.getElementById('map-content-wrapper'));
+            });
+            // ▲▲▲ 修正ここまで ▲▲▲
+
+            const buttons = document.querySelectorAll('.map-select-btn');
+            const updateButtons = () => {
+                buttons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.layer === this.currentMapLayer);
+                });
+            };
+            
+            buttons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const newLayer = e.target.dataset.layer;
+                    if (newLayer !== this.currentMapLayer) {
+                        this.currentMapLayer = newLayer;
+                        this.loadMapTiles().then(() => {
+                            this.needsRender = true;
+                        });
+                        updateButtons();
+                    }
+                });
+            });
+
+            updateButtons();
         }
 
         setupClickEvents() {
@@ -3953,7 +3962,24 @@ Dist: ${distance.toFixed(1)}`;
             this.currentAction.crossFadeTo(newAction, 0.3, true);
             this.currentAction = newAction;
         }
+        cancelCharacterModeSelection() {
+            // 開始地点の選択中でなければ、何もしない
+            if (!this.isSelectingStartPosition) {
+                return;
+            }
 
+            // 選択中状態を解除
+            this.isSelectingStartPosition = false;
+            
+            // 地図のハイライトを消す
+            this.setWalkableAreaHighlight(false);
+
+            // ボタンの表示を元に戻す
+            if (this.characterModeBtn) {
+                this.characterModeBtn.textContent = '人物視点';
+                this.characterModeBtn.classList.remove('active');
+            }
+        }
         setupCharacterModeControls() {
             this.characterModeBtn.addEventListener('click', (event) => {
                 if (this.isCharacterMode) {
@@ -4006,7 +4032,10 @@ toggleCharacterMode(startPosition, isExiting = false) {
                     if (yamaboko) {
                         const modelScene = yamaboko.children.find(child => child.type === 'Group');
                         if (modelScene) {
-                            modelScene.scale.set(5, 5, 5);
+                            // ▼▼▼ 修正箇所 ▼▼▼
+                            // スケールを5倍ではなく、常に等倍(1倍)になるように修正
+                            modelScene.scale.set(1, 1, 1);
+                            // ▲▲▲ 修正ここまで ▲▲▲
                         }
                         const label = yamaboko.children.find(child => child.isCSS2DObject);
                         if (label && yamaboko.userData.originalLabelHeight) {
@@ -4036,11 +4065,9 @@ toggleCharacterMode(startPosition, isExiting = false) {
                 this.controls.maxPolarAngle = 85 * (Math.PI / 180);
                 this.controls.enablePan = true;
                 
-                // ▼▼▼ 2問前の修正（復帰時の描画不全を治す修正） ▼▼▼
                 this.controls.update(); 
                 this.camera.updateMatrixWorld(true);
                 this.needsRender = true; 
-                // ▲▲▲ 修正ここまで ▲▲▲
                 
                 return;
             }
@@ -4142,8 +4169,8 @@ toggleCharacterMode(startPosition, isExiting = false) {
             });
             
             this.needsRender = true; 
-        }
-        
+        }        
+
         updateCharacter(deltaTime) {
             if (!this.girlModel || !this.girlMixer) return;
 
