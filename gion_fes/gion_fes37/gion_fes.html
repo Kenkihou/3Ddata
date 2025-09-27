@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ37</title>
+    <title>祇園祭 山鉾巡行シミュ37+</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -3690,11 +3690,42 @@ setupViewpointControls() {
 
 
         toggleMinimalMode() {
+            // ▼▼▼ このifブロックを追加 ▼▼▼
+            // これから最小構成モードに入る場合（isMinimalModeが現在falseの場合）
+            if (!this.isMinimalMode) {
+                // 先に検索フィルターをすべてクリアする
+                this._clearSearchFilters();
+            }
+            // ▲▲▲ 追加ここまで ▲▲▲
+
             this.isMinimalMode = !this.isMinimalMode;
             this.applyMinimalModeState();
         }
 
-        applyMinimalModeState() {
+        async _resetToInitialState() {
+            // 1. 地図の切り替えを初期状態（オルソ）に戻す
+            this.currentMapLayer = 'ort';
+            await this.loadMapTiles(); // 地図を非同期で再読み込みし、完了を待つ
+
+            // 2. 建物検索のチェックをすべて外す
+            [this.matsuriCheckbox, this.bunkazaiCheckbox, this.keikanCheckbox, this.kyomachiyaCheckbox, this.densanCheckbox].forEach(cb => {
+                if(cb) cb.checked = false;
+            });
+            
+            // 3. 検索モードの状態をクリア
+            this.activeSearchModes.clear();
+
+            // 4. 地図選択ボタンの見た目を更新
+            const mapButtons = document.querySelectorAll('.map-select-btn');
+            mapButtons.forEach(button => {
+                button.classList.toggle('active', button.dataset.layer === this.currentMapLayer);
+            });
+
+            // 5. 山鉾に付いている「祭」ラベルも非表示にする
+            document.querySelectorAll('.yamaboko-search-label').forEach(label => label.style.display = 'none');
+        }
+
+        async applyMinimalModeState() {
             const minimalModeBtn = document.getElementById('minimal-mode-btn');
             
             const buttonsToHide = [
@@ -3717,33 +3748,40 @@ setupViewpointControls() {
                 }
             });
 
-            if (this.interactiveBuildingGroup) this.interactiveBuildingGroup.visible = !this.isMinimalMode;
-            if (this.buildingModel1946) this.buildingModel1946.visible = !this.isMinimalMode;
-            if (this.buildingModel1975) this.buildingModel1975.visible = !this.isMinimalMode;
-            if (this.mapGroup) this.mapGroup.visible = !this.isMinimalMode;
-            if (this.sky) this.sky.visible = !this.isMinimalMode;
-            
-            // 道路関連モデルの表示を削除
-            const roadModels = [ this.roadAsphaltModel, this.roadMarkingModel, this.busBayModel, this.gutterModel, this.sidewalkModel ];
-            roadModels.forEach(model => {
-                if (model) {
-                    // 最小構成モードでは道路モデルは非表示にする
-                    model.visible = false;
-                }
-            });
-            
+
             if (this.isMinimalMode) {
-                this.scene.background = new THREE.Color(0x000000);
+                // --- 最小構成モードへの移行処理 ---
+                this.interactiveBuildingGroup.visible = false;
+                if (this.buildingModel1946) this.buildingModel1946.visible = false;
+                if (this.buildingModel1975) this.buildingModel1975.visible = false;
+                if (this.mapGroup) this.mapGroup.visible = false;
+                
+                if (this.sky) this.sky.visible = false;
+                document.body.style.backgroundColor = 'black';
+
+                const roadModels = [ this.roadAsphaltModel, this.roadMarkingModel, this.busBayModel, this.gutterModel, this.sidewalkModel ];
+                roadModels.forEach(model => { if (model) model.visible = false; });
+                
+                this.isSubCameraVisible = false;
+
+                // ▼▼▼ 確実な修正: すべての検索ラベル（建物・山鉾両方）を非表示にする ▼▼▼
+                this.buildingLabels.forEach(label => label.element.style.display = 'none');
+                this.subCameraBuildingLabels.forEach(label => label.element.style.display = 'none');
+                document.querySelectorAll('.yamaboko-search-label').forEach(label => label.style.display = 'none');
+                // ▲▲▲ ここまで ▲▲▲
+
             } else {
-                this.scene.background = null;
-                this.renderer.setClearColor(0x000000, 0);
+                // --- 通常モードへの復帰処理 ---
+                await this._resetToInitialState();
+
+                if (this.sky) this.sky.visible = true;
+                document.body.style.backgroundColor = 'white';
+                
+                this.isSubCameraVisible = !this.isPhone;
             }
             
-            // ▼▼▼ 新しいヘルパー関数を呼び出すように変更 ▼▼▼
             this._updateWalkableAreaState();
-            // ▲▲▲ 変更ここまで ▲▲▲
             
-            this.isSubCameraVisible = !this.isMinimalMode && !this.isPhone;
             subCameraUIs.forEach(ui => {
                 if (ui) {
                     ui.style.display = this.isSubCameraVisible ? 'block' : 'none';
@@ -3755,21 +3793,38 @@ setupViewpointControls() {
 
             const cameraInfo = document.getElementById('camera-info-display');
             if (cameraInfo) cameraInfo.style.display = this.isMinimalMode ? 'none' : 'block';
-
+            
+            // 状態リセット後に、建物検索ラベルの表示を更新（チェックが全て外れているので非表示になる）
             this._updateLabelVisibility();
-
-            if (this.isMinimalMode) {
-                this.scene.traverse(child => {
-                    if (child.isCSS2DObject && (child.element.classList.contains('waypoint-label') || child.name === 'labelContainer')) {
-                        if (child.parent && child.parent.visible) {
-                            child.visible = true;
-                        }
+            
+            // 地点名・山鉾ラベルの表示状態を決定
+            this.scene.traverse(child => {
+                if (child.isCSS2DObject) {
+                    if (child.element.classList.contains('waypoint-label')) {
+                        child.visible = !this.isCharacterMode;
                     }
-                });
-            }
+                    if (child.name === 'labelContainer') {
+                        child.visible = !this.isCharacterMode && child.parent.visible;
+                    }
+                }
+            });
             
             this.needsRender = true;
         }        
+
+        _clearSearchFilters() {
+            // 1. 建物検索のチェックをすべて外す
+            [this.matsuriCheckbox, this.bunkazaiCheckbox, this.keikanCheckbox, this.kyomachiyaCheckbox, this.densanCheckbox].forEach(cb => {
+                if(cb) cb.checked = false;
+            });
+            
+            // 2. 検索モードの状態をクリア
+            this.activeSearchModes.clear();
+
+            // 3. ラベルの表示状態を即座に更新して非表示にする
+            this._updateLabelVisibility();
+        }
+
         _updateWalkableAreaState() {
             if (!this.walkableArea) return;
 
@@ -3816,18 +3871,25 @@ setupViewpointControls() {
             });
         }
 
-_updateLabelVisibility() {
+        _updateLabelVisibility() {
+            // ▼▼▼ このif文を追加 ▼▼▼
+            // 最小構成モード中は、この関数のロジックを一切実行しない
+            if (this.isMinimalMode) {
+                // 念のため全ての建物検索ラベルを非表示にしておく
+                this.buildingLabels.forEach(item => item.element.style.display = 'none');
+                this.subCameraBuildingLabels.forEach(item => item.element.style.display = 'none');
+                return;
+            }
+            // ▲▲▲ 追加ここまで ▲▲▲
+
             const allLabels = [...this.buildingLabels, ...this.subCameraBuildingLabels];
 
-            // 最初に、すべての建物ラベルを非表示にします
             allLabels.forEach(item => item.element.style.display = 'none');
 
-            // 最小構成モードか、検索チェックボックスが何も選択されていない場合は処理を終了します
-            if (this.isMinimalMode || this.activeSearchModes.size === 0) {
+            if (this.activeSearchModes.size === 0) {
                 return;
             }
 
-            // 建物ごとにラベルをグループ化します
             const groupedLabels = new Map();
             allLabels.forEach(item => {
                 const key = item.buildingId;
@@ -3837,19 +3899,15 @@ _updateLabelVisibility() {
                 groupedLabels.get(key).push(item);
             });
 
-            // 各建物グループ（建物ひとつひとつ）に対して処理を行います
             groupedLabels.forEach(group => {
-                // その建物に付いている各ラベルを順番にチェックします
                 group.forEach(labelItem => {
-                    // もし、そのラベルの種類（'keikan', 'densan'など）が
-                    // 現在チェックされている項目セットに含まれていれば、表示します
                     if (this.activeSearchModes.has(labelItem.type)) {
                         labelItem.element.style.display = 'block';
                     }
                 });
             });
         }
-
+        
         _updateBuildingModelsVisibility(layerId) {
             this.interactiveBuildingGroup.visible = false;
             if (this.buildingModel1946) this.buildingModel1946.visible = false;
@@ -4394,7 +4452,7 @@ Dist: ${distance.toFixed(1)}`;
                 this.controls.minDistance = 50;
                 this.controls.maxDistance = 2000;
                 this.controls.minPolarAngle = 0;
-                this.controls.maxPolarAngle = 85 * (Math.PI / 180);
+                this.controls.maxPolarAngle = 88 * (Math.PI / 180);
                 this.controls.enablePan = true;
                 
                 this.controls.update(); 
