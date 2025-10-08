@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>田の字地区高度地区変遷シミュレーター</title>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+
+<style>
+    body { margin: 0; overflow: hidden; background-color: #e0e0e0; }
+    canvas.webgl-canvas { display: block; }
+    #controls { position: absolute; top: 20px; left: 20px; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; }
+    .control-btn {
+        padding: 10px 15px;
+        font-size: 16px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        transition: background-color 0.2s;
+    }
+    .control-btn.active {
+        background-color: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+
+    .control-btn:not(.active):hover {
+        background-color: #f0f0f0;
+    }
+    
+    #legend {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background-color: rgba(50, 50, 50, 0.8);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        z-index: 10;
+        font-family: sans-serif;
+        font-size: 14px;
+        width: 160px;
+    }
+    #legend h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 16px;
+        border-bottom: 1px solid #888;
+        padding-bottom: 5px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    .legend-color-box {
+        width: 15px;
+        height: 15px;
+        margin-right: 10px;
+        border: 1px solid #ccc;
+    }
+    
+    #building-info-panel {
+        position: absolute;
+        top: 20px;
+        right: 200px; 
+        width: 320px;
+        max-height: 300px;
+        background-color: rgba(50, 50, 50, 0.85);
+        color: white;
+        border-radius: 5px;
+        z-index: 20;
+        font-family: sans-serif;
+        font-size: 13px;
+        display: none;
+        border: 1px solid #777;
+        overflow: hidden;
+    }
+    #info-content {
+        padding: 15px;
+        padding-top: 40px;
+        overflow-y: auto;
+        height: 100%;
+        box-sizing: border-box;
+        word-wrap: break-word;
+    }
+    #info-close-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        line-height: 1;
+    }
+    #info-content h4 {
+        margin-top: 0;
+        color: #00bcd4;
+    }
+    #info-content p {
+        margin: 6px 0;
+    }
+    #info-content span {
+        color: #ddd;
+        margin-left: 8px;
+    }
+
+    #description-text {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        width: 750px;
+        background-color: rgba(50, 50, 50, 0.8);
+        color: #ddd;
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 10;
+        font-family: sans-serif;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+</style>
+</head>
+<body>
+    <div id="controls">
+        <button id="eraS46Btn" class="control-btn">昭和46年</button>
+        <button id="eraS48Btn" class="control-btn">昭和48年</button>
+        <button id="eraSogoBtn" class="control-btn">総合設計</button>
+        <button id="eraH08Btn" class="control-btn">平成8年</button>
+        <button id="eraH19Btn" class="control-btn">平成19年</button>
+        <button id="resetBtn" class="control-btn active">2024PLATEAU</button>
+    </div>
+
+    <div id="legend">
+        <h3>凡例</h3>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #00ff00;"></span>
+            <span>京町家</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #cccccc;"></span>
+            <span>10m以下</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #add8e6;"></span>
+            <span>10m ～ 15m</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #ffff00;"></span>
+            <span>15m ～ 20m</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #ffbfd1;"></span>
+            <span>20m ～ 31m</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #800080;"></span>
+            <span>31m ～ 45m</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color-box" style="background-color: #ff0000;"></span>
+            <span>45m～60m</span>
+        </div>
+    </div>
+    
+    <div id="description-text">
+        初期表示はPLATEAU2024LOD1モデルを高さごとに色分けしたものです。各年代ボタンを押すと、10m以上の高さの建築物が、<br>
+        年代ごとの高度地区の最高高さに変化します。総合設計ボタンは、旧景観政策時代(S48やH8)の高度地区＋１ランクアップです。<br>
+        各建物をクリックすると、PLATEAU2024版の属性情報を参照することができます。          　
+    </div>
+
+    <div id="building-info-panel">
+        <button id="info-close-btn">×</button>
+        <div id="info-content"></div>
+    </div>
+    
+    <canvas class="webgl-canvas"></canvas>
+
+    <script id="vertexShader" type="x-shader/x-vertex">
+        uniform int uActiveEraIndex;
+        uniform float uGroundLevel;
+        attribute float buildingId;
+        attribute float isTall;
+        attribute float actualHeightAttr; 
+        attribute float targetHeightS46;
+        attribute float targetHeightS48;
+        attribute float targetHeightSogo;
+        attribute float targetHeightH08;
+        attribute float targetHeightH19;
+        attribute float isKyomachiya;
+        
+        varying float vIsTall; 
+        varying vec3 vNormal;
+        varying float vActualHeight; 
+        varying float vFinalY;
+        varying float vTargetHeight;
+        varying vec3 vObjectNormal;
+        varying float vIsKyomachiya;
+
+        void main() {
+            vIsKyomachiya = isKyomachiya;
+            vIsTall = isTall; 
+            vNormal = normalize(normalMatrix * normal);
+            vActualHeight = actualHeightAttr;
+            vObjectNormal = normal;
+
+            vec3 modifiedPosition = position;
+
+            float targetHeight = 0.0;
+            if (uActiveEraIndex == 1) {
+                targetHeight = targetHeightS46;
+            } else if (uActiveEraIndex == 2) {
+                targetHeight = targetHeightS48;
+            } else if (uActiveEraIndex == 3) {
+                targetHeight = targetHeightSogo;
+            } else if (uActiveEraIndex == 4) {
+                targetHeight = targetHeightH08;
+            } else if (uActiveEraIndex == 5) {
+                targetHeight = targetHeightH19;
+            }
+            
+            vTargetHeight = targetHeight;
+            
+            if (isTall > 0.5 && targetHeight > 0.0) {
+                if (position.y > (uGroundLevel + 0.01)) {
+                    float offset = targetHeight - actualHeightAttr;
+                    modifiedPosition.y += offset;
+                }
+            }
+
+            vFinalY = modifiedPosition.y;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(modifiedPosition, 1.0);
+        }
+    </script>
+    
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        uniform float uGroundLevel;
+        varying vec3 vNormal;
+        varying float vIsTall;
+        varying float vActualHeight;
+        varying float vFinalY;
+        varying float vTargetHeight;
+        varying vec3 vObjectNormal;
+        varying float vIsKyomachiya;
+
+        void main() {
+            vec3 baseColor;
+            
+            if (vIsKyomachiya > 0.5 && vIsTall < 0.5) {
+                baseColor = vec3(0.0, 1.0, 0.0); // Green
+            } else {
+                if (vIsTall > 0.5) {
+                    float heightFromGround = vFinalY - uGroundLevel;
+                    float heightForColoring = heightFromGround;
+
+                    if (abs(vObjectNormal.y) > 0.99) {
+                        heightForColoring -= 0.01;
+                    }
+
+                    if (heightForColoring > 45.0) {
+                        baseColor = vec3(1.0, 0.0, 0.0);
+                    } else if (heightForColoring > 31.0) {
+                        baseColor = vec3(0.5, 0.0, 0.5);
+                    } else if (heightForColoring > 20.0) {
+                        baseColor = vec3(1.0, 0.75, 0.8);
+                    } else if (heightForColoring > 15.0) {
+                        baseColor = vec3(1.0, 1.0, 0.0);
+                    } else if (heightForColoring > 10.0) {
+                        baseColor = vec3(0.678, 0.847, 0.902);
+                    } else {
+                        baseColor = vec3(0.8, 0.8, 0.8); 
+                    }
+                } else {
+                    baseColor = vec3(0.8, 0.8, 0.8); // Gray
+                }
+            }
+            
+            vec3 lightDirection = normalize(vec3(0.5, 1.0, 0.75));
+            float ambientLight = 0.5;
+            float diffuse = max(dot(vNormal, lightDirection), 0.0);
+            float brightness = ambientLight + (1.0 - ambientLight) * diffuse;
+            vec3 lightedColor = baseColor * brightness;
+            
+            gl_FragColor = vec4(lightedColor, 1.0);
+        }
+    </script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+    class BuildingViewerApp {
+        constructor() {
+            this.buildingAttributes = {};
+            this.customMaterial = null;
+            this.interactiveMeshes = [];
+            this.buildingInfo = new Map();
+            this.needsRender = true;
+            this.raycaster = new THREE.Raycaster();
+            this.mouse = new THREE.Vector2();
+
+            this.setupCore();
+            this.setupUI();
+            this.setupEventListeners();
+            this.loadModels();
+            this.animate();
+        }
+
+        setupCore() {
+            this.scene = new THREE.Scene();
+            this.scene.background = new THREE.Color(0x333333);
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 10, 8000);
+            this.camera.position.set(0, 800, 800);
+            this.canvas = document.querySelector('.webgl-canvas');
+            this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas: this.canvas });
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+            this.controls.enableDamping = false;
+
+            this.controls.addEventListener('change', () => {
+                this.needsRender = true;
+            });
+
+            this.controls.minDistance = 50;
+            this.controls.maxDistance = 2000;
+            this.controls.target.set(0, 0, 0);
+            this.controls.update();
+            this.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(100, 200, 150);
+            this.scene.add(directionalLight);
+
+            window.addEventListener('resize', () => {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.needsRender = true;
+            });
+        }
+        
+        setupUI() {
+            const buttons = {
+                s46: document.getElementById('eraS46Btn'),
+                s48: document.getElementById('eraS48Btn'),
+                sogo: document.getElementById('eraSogoBtn'),
+                h08: document.getElementById('eraH08Btn'),
+                h19: document.getElementById('eraH19Btn'),
+                reset: document.getElementById('resetBtn'),
+            };
+            const allButtons = Object.values(buttons);
+
+            const setActiveEra = (eraIndex, clickedButton) => {
+                if(this.customMaterial) {
+                    this.customMaterial.uniforms.uActiveEraIndex.value = eraIndex;
+                }
+                allButtons.forEach(btn => btn.classList.remove('active'));
+                clickedButton.classList.add('active');
+                
+                this.needsRender = true;
+            };
+
+            buttons.s46.addEventListener('click', (e) => setActiveEra(1, e.target));
+            buttons.s48.addEventListener('click', (e) => setActiveEra(2, e.target));
+            buttons.sogo.addEventListener('click', (e) => setActiveEra(3, e.target));
+            buttons.h08.addEventListener('click', (e) => setActiveEra(4, e.target));
+            buttons.h19.addEventListener('click', (e) => setActiveEra(5, e.target));
+            buttons.reset.addEventListener('click', (e) => setActiveEra(0, e.target));
+            buttons.reset.textContent = '2024PLATEAU';
+
+            const infoPanel = document.getElementById('building-info-panel');
+            const infoCloseBtn = document.getElementById('info-close-btn');
+            infoCloseBtn.addEventListener('click', () => {
+                infoPanel.style.display = 'none';
+            });
+        }
+
+        setupEventListeners() {
+            this.canvas.addEventListener('dblclick', this.onDoubleClick);
+        }
+
+        onDoubleClick = (event) => {
+            event.preventDefault();
+            this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects(this.interactiveMeshes);
+            const infoPanel = document.getElementById('building-info-panel');
+            const infoContent = document.getElementById('info-content');
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                if (intersect.face && intersect.object.geometry.attributes.uv) {
+                    const uvAttribute = intersect.object.geometry.attributes.uv;
+                    const buildingId = Math.round(uvAttribute.getX(intersect.face.a));
+                    const buildingData = this.buildingAttributes[buildingId];
+
+                    if (buildingData) {
+                        let html = `<h4>建物情報 (ID: ${buildingId})</h4>`;
+                        html += `<p>id:<span>${buildingData.id || 'N/A'}</span></p>`;
+                        html += `<p>構造:<span>${buildingData.buildingStructureType || 'N/A'}</span></p>`;
+                        html += `<p>高さ:<span>${buildingData.measuredHeight ? buildingData.measuredHeight.toFixed(1) + 'm' : 'N/A'}</span></p>`;
+                        html += `<p>地上階数:<span>${buildingData.storeysAboveGround || 'N/A'}</span></p>`;
+                        html += `<p>地下階数:<span>${buildingData.storeysBelowGround || 'N/A'}</span></p>`;
+                        html += `<p>建築年:<span>${buildingData.yearOfConstruction || 'N/A'}</span></p>`;
+                        html += `<p>用途:<span>${buildingData.usage || 'N/A'}</span></p>`;
+
+                        infoContent.innerHTML = html;
+                        infoPanel.style.display = 'block';
+                    } else {
+                        infoPanel.style.display = 'none';
+                    }
+                }
+            } else {
+                 infoPanel.style.display = 'none';
+            }
+            this.needsRender = true;
+        }
+
+        async loadModels() {
+            const gltfLoader = new GLTFLoader();
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+            gltfLoader.setDRACOLoader(dracoLoader);
+            const jsonLoader = new THREE.FileLoader();
+            const loadGLB = (url) => gltfLoader.loadAsync(url);
+            const loadJSON = (url) => new Promise((resolve, reject) => {
+                jsonLoader.load(url, (data) => resolve(JSON.parse(data)), undefined, reject);
+            });
+            
+            const parseHeight = (heightString) => {
+                if (typeof heightString !== 'string') return 0;
+                if (heightString.includes("無指定")) return 31.0;
+                const match = heightString.match(/(\d+(\.\d+)?)/);
+                return match ? parseFloat(match[1]) : 0;
+            };
+
+            try {
+                this.customMaterial = this.createCustomMaterial();
+                const [buildingGltf, buildingAttrData, kyomachiyaData] = await Promise.all([
+                    loadGLB('bldg.glb'),
+                    loadJSON('final_merged_output.json'),
+                    loadJSON('kyomachiya_kachizuke.json')
+                ]);
+
+                const tranGltf = await loadGLB('tran_3.glb');
+                this.scene.add(tranGltf.scene);
+
+                const kyomachiyaGmlIdSet = new Set(kyomachiyaData.map(item => item['GML ID']));
+
+                buildingAttrData.forEach(attr => {
+                    const key = attr.sequential_id || attr.id;
+                    if (key) this.buildingAttributes[key] = attr;
+                });
+                
+                let minY = Infinity;
+                buildingGltf.scene.traverse(object => {
+                    if (object.isMesh) {
+                        const positions = object.geometry.attributes.position.array;
+                        for (let i = 1; i < positions.length; i += 3) {
+                            if (positions[i] < minY) minY = positions[i];
+                        }
+                    }
+                });
+                console.log('モデルの底面の高さ (Y座標の最小値) は:', minY);
+                this.customMaterial.uniforms.uGroundLevel.value = minY;
+
+                const buildingGeometries = new Map();
+                buildingGltf.scene.traverse(object => {
+                    if (object.isMesh && object.geometry.attributes.uv) {
+                        const positions = object.geometry.attributes.position.array;
+                        const uvs = object.geometry.attributes.uv.array;
+                        for (let i = 0; i < uvs.length / 2; i++) {
+                            const buildingId = Math.round(uvs[i * 2]);
+                            if (!buildingGeometries.has(buildingId)) {
+                                buildingGeometries.set(buildingId, { min: Infinity, max: -Infinity });
+                            }
+                            const y = positions[i * 3 + 1];
+                            const buildingData = buildingGeometries.get(buildingId);
+                            if (y < buildingData.min) buildingData.min = y;
+                            if (y > buildingData.max) buildingData.max = y;
+                        }
+                    }
+                });
+                for (const [id, geo] of buildingGeometries.entries()) {
+                    this.buildingInfo.set(id, { actualHeight: geo.max - geo.min });
+                }
+                
+                // ★★★ 修正1: 例外IDのリストを定義 ★★★
+                const exceptionIds = new Set([12884, 10855, 8225, 9660]);
+
+                buildingGltf.scene.traverse(object => {
+                    if (object.isMesh && object.geometry.attributes.uv) {
+                        this.interactiveMeshes.push(object);
+                        const uvAttribute = object.geometry.attributes.uv;
+                        const vertexCount = uvAttribute.count;
+
+                        const idArray = new Float32Array(vertexCount);
+                        const isTallArray = new Float32Array(vertexCount); 
+                        const isKyomachiyaArray = new Float32Array(vertexCount);
+                        const actualHeightArray = new Float32Array(vertexCount);
+                        const targetS46 = new Float32Array(vertexCount);
+                        const targetS48 = new Float32Array(vertexCount);
+                        const targetSogo = new Float32Array(vertexCount);
+                        const targetH08 = new Float32Array(vertexCount);
+                        const targetH19 = new Float32Array(vertexCount);
+                        
+                        for (let i = 0; i < vertexCount; i++) {
+                            const buildingId = Math.round(uvAttribute.getX(i));
+                            idArray[i] = buildingId;
+                            const attr = this.buildingAttributes[buildingId];
+                            
+                            // ★★★ 修正2: isTallフラグの設定条件に例外IDのチェックを追加 ★★★
+                            if (attr && attr.measuredHeight > 10.0 && !exceptionIds.has(attr.sequential_id)) {
+                                isTallArray[i] = 1.0;
+                            } else {
+                                isTallArray[i] = 0.0; 
+                            }
+                            
+                            if (attr && kyomachiyaGmlIdSet.has(attr.id)) {
+                                isKyomachiyaArray[i] = 1.0;
+                            } else {
+                                isKyomachiyaArray[i] = 0.0;
+                            }
+
+                            actualHeightArray[i] = this.buildingInfo.get(buildingId)?.actualHeight || 0.0;
+                            
+                            if (attr) {
+                                targetS46[i] = parseHeight(attr["01_S461228高"]);
+                                targetS48[i] = parseHeight(attr["01_S481225高"]);
+                                targetSogo[i] = parseHeight(attr["総合設計許可上限"]);
+                                targetH08[i] = parseHeight(attr["02_H080524高"]);
+                                targetH19[i] = parseHeight(attr["02_H190901高"]);
+                            }
+                        }
+                        object.geometry.setAttribute('buildingId', new THREE.BufferAttribute(idArray, 1));
+                        object.geometry.setAttribute('isTall', new THREE.BufferAttribute(isTallArray, 1));
+                        object.geometry.setAttribute('isKyomachiya', new THREE.BufferAttribute(isKyomachiyaArray, 1));
+                        object.geometry.setAttribute('actualHeightAttr', new THREE.BufferAttribute(actualHeightArray, 1));
+                        object.geometry.setAttribute('targetHeightS46', new THREE.BufferAttribute(targetS46, 1));
+                        object.geometry.setAttribute('targetHeightS48', new THREE.BufferAttribute(targetS48, 1));
+                        object.geometry.setAttribute('targetHeightSogo', new THREE.BufferAttribute(targetSogo, 1));
+                        object.geometry.setAttribute('targetHeightH08', new THREE.BufferAttribute(targetH08, 1));
+                        object.geometry.setAttribute('targetHeightH19', new THREE.BufferAttribute(targetH19, 1));
+
+                        object.material = this.customMaterial;
+                    }
+                });
+                this.scene.add(buildingGltf.scene);
+                
+                this.needsRender = true; 
+
+            } catch (error) { console.error('データの読み込みに失敗しました:', error); }
+        }
+
+        createCustomMaterial() {
+            const vertexShader = document.getElementById('vertexShader').textContent;
+            const fragmentShader = document.getElementById('fragmentShader').textContent;
+            
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    uActiveEraIndex: { value: 0 },
+                    uGroundLevel: { value: 0.0 }
+                },
+                vertexShader,
+                fragmentShader,
+            });
+        }
+
+        animate = () => {
+            requestAnimationFrame(this.animate);
+
+            const cameraHasMoved = this.controls.update();
+
+            if (cameraHasMoved || this.needsRender) {
+                this.renderer.render(this.scene, this.camera);
+                this.needsRender = false;
+            }
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => { new BuildingViewerApp(); });
+</script>
+
+</body>
+</html>
