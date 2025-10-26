@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ50+</title>
+    <title>祇園祭 山鉾巡行シミュ50++</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -1336,8 +1336,14 @@
                 left: 0;
                 top: 0;
                 padding: 5px;
-                gap: 5px;
-                box-sizing: border-box;
+                /* ▼▼▼ 変更: 隙間を詰める ▼▼▼ */
+                gap: 3px;
+                /* ▲▲▲ 変更ここまで ▲▲▲ */
+                box-sizing: border-box; /* paddingを含めて計算 */
+                width: 100%;       /* Ensure container takes full width */
+                /* ▼▼▼ 変更: 折り返しを無効化 ▼▼▼ */
+                /* flex-wrap: wrap; */
+                /* ▲▲▲ 変更ここまで ▲▲▲ */
             }
         @media (max-width: 768px) and (orientation: portrait) {
             #camera-info-display {
@@ -1345,10 +1351,14 @@
             }
         }
 
-            .top-bar-btn {
-                padding: 8px 5px;
+.top-bar-btn {
+                /* ▼▼▼ 変更: パディングを調整 ▼▼▼ */
+                padding: 6px 4px;
+                /* ▲▲▲ 変更ここまで ▲▲▲ */
                 text-align: center;
-                font-size: 0.8em;
+                /* ▼▼▼ 変更: フォントサイズを小さくする ▼▼▼ */
+                font-size: 0.75em;
+                /* ▲▲▲ 変更ここまで ▲▲▲ */
             }
 
             #time-display {
