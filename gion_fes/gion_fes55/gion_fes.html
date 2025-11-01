@@ -2025,7 +2025,53 @@ setupCore() {
             this.needsRender = true; // ウィンドウサイズが変更されたので再描画を要求
             // ▲▲▲ 追加ここまで ▲▲▲
         }
-        
+
+onWindowResize() {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+
+            this.camera.aspect = w / h;
+            this.camera.updateProjectionMatrix();
+            
+            this.renderer.setSize(w, h);
+            this.cssRenderer.setSize(w, h);
+            this.labelRenderer.setSize(w, h);
+
+            // ▼▼▼ この行を追加 ▼▼▼
+            this.needsRender = true; // ウィンドウサイズが変更されたので再描画を要求
+            // ▲▲▲ 追加ここまで ▲▲▲
+        }
+
+        // ▼▼▼ この関数を丸ごと追加 ▼▼▼
+        _fixTextureFiltering(sceneObject) {
+            if (!sceneObject) return;
+            sceneObject.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    // 1つのメッシュに複数のマテリアルが割り当てられている場合も考慮
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    
+                    materials.forEach(material => {
+                        // マテリアルにテクスチャマップ(material.map)が設定されているか確認
+                        if (material.map && material.map.isTexture) {
+                            
+                            // 1. ミップマップの自動生成を停止
+                            material.map.generateMipmaps = false;
+                            
+                            // 2. テクスチャの縮小フィルターを「ミップマップを使わない」設定に変更
+                            material.map.minFilter = THREE.LinearFilter;
+                            
+                            // 3. 拡大フィルターも念のため設定 (こちらはミップマップに関係ないが統一)
+                            material.map.magFilter = THREE.LinearFilter;
+                            
+                            // 4. マテリアルの設定が変更されたことをThree.jsに通知
+                            material.needsUpdate = true;
+                        }
+                    });
+                }
+            });
+        }
+        // ▲▲▲ 追加ここまで ▲▲▲        
+
         setupClipping() {
             this.clippingPlanes = [
                 new THREE.Plane(new THREE.Vector3(0, 0, -1), 800),
@@ -2734,6 +2780,10 @@ _displayTutorial() {
                 for (const data of shishinData) {
                     const container = new THREE.Group();
                     const model = data.gltf.scene;
+
+                    // ▼▼▼ 修正: ここで _fixTextureFiltering を呼び出す ▼▼▼
+                    this._fixTextureFiltering(model);
+                    // ▲▲▲ 修正ここまで ▲▲▲
                     
                     container.add(model);
 
@@ -2788,6 +2838,11 @@ _displayTutorial() {
                     this.scene.add(object);
                     // const path = this._createPathFromGltf(pathGltf); // ★★★ 削除 (計算不要になった) ★★★
                     const model = modelGltf.scene;
+
+                    // ▼▼▼ 修正: ここで _fixTextureFiltering を呼び出す ▼▼▼
+                    this._fixTextureFiltering(model);
+                    // ▲▲▲ 修正ここまで ▲▲▲
+                    
                     model.scale.set(1, 1, 1);
                     object.add(model);
                 
@@ -3026,8 +3081,6 @@ _displayTutorial() {
                 if(progressText) progressText.textContent = 'Error';
             }
         }
-
-
         _calculateVideoTimings() {
             const allSchedules = new Map();
             for (const name in this.yamabokoPropertyMap) {
