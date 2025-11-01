@@ -1827,31 +1827,63 @@ void main() {
     varying vec3 vWorldPosition;
     uniform vec3 uTopColor;
     uniform vec3 uBottomColor;
-    uniform sampler2D uMountainTexture;
-    uniform float uVerticalOffset;
+    uniform sampler2D uMountainTexture; // 2048x64 のテクスチャ
+
     const float PI = 3.141592653589793;
 
+    // --- (調整用パラメータ) ---
+    
+    // 1. 山の「垂直位置」
+    // ▼▼▼ 修正: 0.753 や 0.353 ではなく、地平線を示す「0.5」に戻します ▼▼▼
+    // (0.51 や 0.52 にすると、山がわずかに地平線より上に表示されます)
+    const float HORIZON_V_POSITION = 0.485; 
+    
+    // 2. 山の「表示上の高さ」
+    // (元の 0.04 に戻します)
+    const float MOUNTAIN_V_HEIGHT = 0.06; 
+    // --- (ここまで) ---
+
     void main() {
-        // グラデーション空の色を計算
-        float h = normalize(vWorldPosition).y;
-        float t = (h + 1.0) / 2.0;
-        vec3 skyColor = mix(uBottomColor, uTopColor, smoothstep(0.5, 0.7, t));
-        // ★★★ 地平線付近が滑らかに透明になる、元のロジックに戻します ★★★
-        float skyAlpha = smoothstep(0.5, 0.55, t);
-        vec4 finalSky = vec4(skyColor, skyAlpha);
-
-        // 3D座標からUV座標を計算
+        
+        // --- 1. 正規化された方向ベクトルを計算 (変更なし) ---
         vec3 dir = normalize(vWorldPosition);
+        
+        // --- 2. 空のグラデーション色の計算 ---
+        float t = (dir.y + 1.0) / 2.0; 
+        vec3 skyColor = mix(uBottomColor, uTopColor, smoothstep(0.5, 0.55, t));
+            
+        // --- 3. 水平(U)座標の計算 (経度) (変更なし) ---
         float u = 0.5 + atan(dir.z, dir.x) / (2.0 * PI);
-        float v = 0.5 - asin(dir.y) / PI;
-        
-        // 山のテクスチャから色を取得
-        vec4 mountainColor = texture2D(uMountainTexture, vec2(u, 1.0 - v + uVerticalOffset));
-        
-        // 空の色と山の画像をアルファ合成
-        vec4 finalColor = mix(finalSky, mountainColor, mountainColor.a);
 
-        gl_FragColor = finalColor;
+        // --- 4. 垂直(V)座標の計算 (緯度) (変更なし) ---
+        float v = 0.5 - asin(dir.y) / PI; // 0.0(天頂) ～ 0.5(地平線) ～ 1.0(真下)
+
+        // --- 5. 山を描画する「V座標の範囲」を計算 ---
+        float v_start = HORIZON_V_POSITION - (MOUNTAIN_V_HEIGHT / 2.0);
+        float v_end   = HORIZON_V_POSITION + (MOUNTAIN_V_HEIGHT / 2.0);
+
+        // --- 6. 現在のV座標が、描画範囲の外か？ ---
+        if (v < v_start || v > v_end) {
+            // 範囲外: 単純に「不透明な空」を描画
+            gl_FragColor = vec4(skyColor, 1.0); 
+        
+        } else {
+            // --- 7. 範囲内: 空の色と山のテクスチャを合成 ---
+            
+            // v座標 [v_start, v_end] を、テクスチャのv座標 [0.0, 1.0] に変換
+            float v_mapped = (v - v_start) / (MOUNTAIN_V_HEIGHT);
+            
+            // ▼▼▼ 修正: v_mapped を 1.0 - v_mapped に変更し、上下反転を直す ▼▼▼
+            vec4 mountainColor = texture2D(uMountainTexture, vec2(u, 1.0 - v_mapped));
+            // ▲▲▲ 修正ここまで ▲▲▲
+            
+            // 山のテクスチャのアルファ(mountainColor.a)を使って、
+            // 空の色(skyColor) と 山の色(mountainColor.rgb) を合成
+            vec3 finalColor = mix(skyColor, mountainColor.rgb, mountainColor.a);
+            
+            // 最終的な色を「アルファ 1.0 (不透明)」で出力
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
     }
 </script>
 
@@ -4755,44 +4787,60 @@ _parseHeight(heightString) {
         }
         
 async addSkyDome() {
-    const textureLoader = new THREE.TextureLoader();
-    const skyGeometry = new THREE.SphereGeometry(this.SKY_DOME_RADIUS, 64, 15);
+            const textureLoader = new THREE.TextureLoader();
+            
+            // メッシュの解像度を 64x64 に設定 (これは正しいです)
+            const skyGeometry = new THREE.SphereGeometry(this.SKY_DOME_RADIUS, 64, 64);
 
-    try {
-        // ★★★ .loadAsync を使い、await で読み込み完了を待機します ★★★
-        const mountainTexture = await textureLoader.loadAsync('../asset_archi+road+character_final/三山画像.png');
-        
-        // --- ↓↓↓ ここから下の処理は、テクスチャの準備ができてから実行されます ↓↓↓ ---
+            try {
+                // 1. ファイルを読み込む
+                const mountainTexture = await textureLoader.loadAsync('../asset_archi+road+character_final/三山画像2.png');
+                
+                // ▼▼▼ ★★★ 修正（これが最終版です） ★★★ ▼▼▼
+                
+                // 2. VRAM 0.5MB なので、ミップマップを「有効」に戻す (ちらつき防止)
+                mountainTexture.generateMipmaps = true; 
+                mountainTexture.minFilter = THREE.LinearMipmapLinearFilter; // ミップマップを使う
+                mountainTexture.magFilter = THREE.LinearFilter;
 
-        mountainTexture.wrapS = THREE.RepeatWrapping;
+                // 3. 異方性フィルタリングを有効にし、極端な角度でのサンプリング品質を最大化する
+                // (ミップマップ有効時なので、anisotropy は正しく動作します)
+                mountainTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                
+                // 4. テクスチャプロパティの変更を通知
+                mountainTexture.needsUpdate = true; 
+                
+                // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
-        const skyMaterial = new THREE.ShaderMaterial({
-            vertexShader: document.getElementById('skyVertexShader').textContent,
-            fragmentShader: document.getElementById('skyFragmentShader').textContent,
-            uniforms: {
-                uTopColor: { value: new THREE.Color(0x87CEEB) },
-                uBottomColor: { value: new THREE.Color(0xFFFFFF) },
-                uMountainTexture: { value: mountainTexture },
-                uVerticalOffset: { value: 0.043 }
-            },
-            side: THREE.BackSide,
-            transparent: true,
-            depthWrite: false
-        });
+                // 5. テクスチャを横に繰り返す
+                mountainTexture.wrapS = THREE.RepeatWrapping;
+                
+                // --- (マテリアルとシェーダーは変更なし) ---
+                const skyMaterial = new THREE.ShaderMaterial({
+                    vertexShader: document.getElementById('skyVertexShader').textContent,
+                    fragmentShader: document.getElementById('skyFragmentShader').textContent,
+                    uniforms: {
+                        uTopColor: { value: new THREE.Color(0x87CEEB) },
+                        uBottomColor: { value: new THREE.Color(0xFFFFFF) },
+                        uMountainTexture: { value: mountainTexture }
+                    },
+                    side: THREE.BackSide,
+                    depthWrite: false 
+                });
 
-        const sky = new THREE.Mesh(skyGeometry, skyMaterial);
-        this.sky = sky; // ★★★ この一行を追加して、skyオブジェクトをクラスプロパティに保存 ★★★
-        sky.renderOrder = 2; // ★★★ 描画順を「2」に設定 (地面より後) ★★★
-        sky.rotation.y = Math.PI / 2;
-        
-        this.scene.add(sky);
+                const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+                this.sky = sky; 
+                sky.renderOrder = 2; 
+                sky.rotation.y = Math.PI / 2;
+                
+                this.scene.add(sky);
 
-        console.log("カスタムスカイドームがシーンに追加されました。(async/await)");
+                console.log("カスタムスカイドームがシーンに追加されました。(async/await)");
 
-    } catch (error) {
-        console.error('スカイドームのテクスチャ読み込み中にエラーが発生しました:', error);
-    }
-}
+            } catch (error) {
+                console.error('スカイドームのテクスチャ読み込み中にエラーが発生しました:', error);
+            }
+        }   
 
 setupSubCameras() {
             this.subCameraData.forEach((data, index) => {
