@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ59+</title>
+    <title>祇園祭 山鉾巡行シミュ59++</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -5874,12 +5874,24 @@ setupVisibilityControls(openModalCallback) {
             
 window.addEventListener('click', (event) => {
                 if (!this.isSelectingStartPosition) return;
+                
+                // ▼▼▼ ★★★ 修正箇所 ★★★ ▼▼▼
+                
+                // 1. Canvas要素の「画面上の実際の位置と寸法」を取得します
+                const rect = this.renderer.domElement.getBoundingClientRect();
 
-                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                // 2. タップ位置(event.clientX/Y)を、Canvasの左上を0とした相対座標(x, y)に変換します
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+
+                // 3. 「window」の高さではなく、「Canvasの実際の高さ(rect.height)」を使って
+                //    -1から+1の座標（NDC）に正規化します
+                this.mouse.x = (x / rect.width) * 2 - 1;
+                this.mouse.y = -(y / rect.height) * 2 + 1;
+                
+                // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
                 this.raycaster.far = Infinity;
-                
                 this.raycaster.setFromCamera(this.mouse, this.camera);
                 const walkableIntersects = this.raycaster.intersectObjects(this.walkableMeshes, true);
 
