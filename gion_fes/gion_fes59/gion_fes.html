@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ59</title>
+    <title>祇園祭 山鉾巡行シミュ59+</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -5872,12 +5872,14 @@ setupVisibilityControls(openModalCallback) {
                 }
             });
             
-            window.addEventListener('click', (event) => {
+window.addEventListener('click', (event) => {
                 if (!this.isSelectingStartPosition) return;
 
-                // ▼▼▼ この1行で、毎回必ず光線の探索距離を無限にリセットします ▼▼▼
-                this.raycaster.far = Infinity;
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
+                this.raycaster.far = Infinity;
+                
                 this.raycaster.setFromCamera(this.mouse, this.camera);
                 const walkableIntersects = this.raycaster.intersectObjects(this.walkableMeshes, true);
 
