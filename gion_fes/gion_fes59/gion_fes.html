@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ59++</title>
+    <title>祇園祭 山鉾巡行シミュ59</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -5872,25 +5872,28 @@ setupVisibilityControls(openModalCallback) {
                 }
             });
             
-window.addEventListener('click', (event) => {
+        this.renderer.domElement.addEventListener('pointerup', (event) => {
+                
+                // 1. 「歩き回る」モードの開始地点選択中でなければ、何もしない
                 if (!this.isSelectingStartPosition) return;
-                
-                // ▼▼▼ ★★★ 修正箇所 ★★★ ▼▼▼
-                
-                // 1. Canvas要素の「画面上の実際の位置と寸法」を取得します
+
+                // 2. このイベントがOrbitControlsなどに伝わらないよう、即座に停止する
+                //    (これにより、タップした瞬間に視点が動くのを防ぎます)
+                event.preventDefault();
+                event.stopPropagation();
+
+                // 3. Canvas要素の「画面上の実際の位置と寸法」を取得
                 const rect = this.renderer.domElement.getBoundingClientRect();
 
-                // 2. タップ位置(event.clientX/Y)を、Canvasの左上を0とした相対座標(x, y)に変換します
+                // 4. タップ位置(event.clientX/Y)を、Canvasの左上を0とした相対座標(x, y)に変換
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
 
-                // 3. 「window」の高さではなく、「Canvasの実際の高さ(rect.height)」を使って
-                //    -1から+1の座標（NDC）に正規化します
+                // 5. 「Canvasの実際の高さ(rect.height)」を使って-1から+1の座標に正規化
                 this.mouse.x = (x / rect.width) * 2 - 1;
                 this.mouse.y = -(y / rect.height) * 2 + 1;
-                
-                // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
 
+                // 6. レイ（光線）を飛ばして判定
                 this.raycaster.far = Infinity;
                 this.raycaster.setFromCamera(this.mouse, this.camera);
                 const walkableIntersects = this.raycaster.intersectObjects(this.walkableMeshes, true);
@@ -5898,7 +5901,7 @@ window.addEventListener('click', (event) => {
                 if (walkableIntersects.length > 0) {
                     this.toggleCharacterMode(walkableIntersects[0].point.clone(), false);
                 }
-            });
+            }, { passive: false }); // event.preventDefault() を呼ぶために passive: false が必要
         }
 
         handleBuildingClick(intersection) {
