@@ -89,5 +89,16 @@
         "text": "2025年祇園祭の歩行者天国の日程と時間（都つーしん）",
         "url": "https://kyoto.tips/gion-hokoshatengoku"
     }
+    },
+  {
+    "type": "title",
+    "content": "使用している地図について"
+  },
+    {
+    "type": "link",
+    "content": {
+        "text": "地理院タイルを使用させていただいています。",
+        "url": "https://maps.gsi.go.jp/development/ichiran.html"
+    }
     }
 ]
