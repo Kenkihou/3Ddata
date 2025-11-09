@@ -1,0 +1,38 @@
+[
+  {
+    "stampRallyId": 1,
+    "title": "町会所でちまき集め・その１",
+    "referenceLabel": "祇園祭",
+    "locations": [
+      {"buildingName": "長刀鉾町会所"},
+      {"buildingName": "函谷鉾町会所"},
+      {"buildingName": "月鉾町会所"},
+      {"buildingName": "郭巨山町会所"},
+      {"buildingName": "蟷螂山町会所"}
+    ]
+  },
+  {
+    "stampRallyId": 2,
+    "title": "町会所でちまき集め・その２",
+    "referenceLabel": "祇園祭",
+    "locations": [
+      {"buildingName": "木賊山町会所"},
+      {"buildingName": "岩戸山町会所"},
+      {"buildingName": "船鉾町会所"},
+      {"buildingName": "伯牙山町会所"},
+      {"buildingName": "芦刈山町会所"}
+    ]
+  },
+  {
+    "stampRallyId": 3,
+    "title": "三条通で近代建築物巡り",
+    "referenceLabel": ["景観", "文化財"],
+    "locations": [
+      {"buildingName": "旧毎日新聞社京都支局１棟"},
+       {"buildingName": "SACRA（旧不動貯金銀行京都支店）"},
+      {"buildingName": "日本生命京都三条ビル（界）"},
+      {"buildingName": "旧日本銀行京都支店"},
+      {"buildingName": "中京郵便局旧庁舎外観１棟"}
+    ]
+  }
+]
