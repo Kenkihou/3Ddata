@@ -1,7 +1,7 @@
 [
   {
     "stampRallyId": 1,
-    "title": "町会所でちまき集め・その１",
+    "title": "町会所でちまき集め１",
     "referenceLabel": "祇園祭",
     "locations": [
       {"buildingName": "長刀鉾町会所"},
@@ -13,7 +13,7 @@
   },
   {
     "stampRallyId": 2,
-    "title": "町会所でちまき集め・その２",
+    "title": "町会所でちまき集め２",
     "referenceLabel": "祇園祭",
     "locations": [
       {"buildingName": "木賊山町会所"},
