@@ -1996,7 +1996,7 @@
 
         /* レベル称号 (例: レベル1：田の字入門者) */
         #score-level-title {
-            font-size: 2.2em;
+            font-size: clamp(1.3em, 5.5vw, 2.2em);
             color: #f1c40f; /* 金色 */
             margin: 0;
             text-shadow: 0 0 10px #f1c40f;
@@ -8623,11 +8623,26 @@ _cullBuildingBlocks(camera) {
             if (isCorrect) {
                 // --- 正解の場合 ---
                 this._showTelop(`正解！`, false, true); // 虹色テロップ
+                
+                // ▼▼▼ ★★★ ここからが修正箇所です ★★★ ▼▼▼
+                
+                // 1. 先にスコアを加算する
                 this._addScore(this.scoreConfig.quizCorrect, null, `quiz_${correctOption.title}`); // クイズ正解
+                
+                // 2. 正解数を 1 増やす
+                this.currentQuizCorrectCount++;
+                
+                // 3. モーダルタイトルを「即座に」更新する
+                if (this.quizModalTitle) {
+                    const answeredCount = this.currentQuizQuestionCount > 0 ? this.currentQuizQuestionCount - 1 : 0;
+                    this.quizModalTitle.innerHTML = `クイズ：現在${answeredCount}問中、<span class="quiz-highlight">${this.currentQuizCorrectCount}問正解</span>です。`;
+                }
+                
+                // ▲▲▲ ★★★ 修正ここまで ★★★ ▲▲▲
+
             } else {
                 // --- 不正解の場合 ---
                 this._showTelop(`不正解... 正解は「${correctOption.title}」です`, false, false);
-                // ▼▼▼ ★★★ 以下の1行をここに追加 ★★★ ▼▼▼
                 this._addScore(this.scoreConfig.quizIncorrect, null, `quiz_incorrect_${correctOption.title}`); // 不正解でも加点
             }
 
@@ -8635,7 +8650,6 @@ _cullBuildingBlocks(camera) {
             const labelData = this._findLabelDataByTitle(correctOption.title, correctOption.referenceLabel);
             
             if (labelData) {
-                // ▼▼▼ ★★★ 修正: 第2引数に true を渡し、重複加算を防止 ★★★ ▼▼▼
                 this._showGenericLabelInfoPanel(labelData, true); // (fromQuiz = true)
             } else {
                 console.warn(`情報パネル用のデータが見つかりませんでした: ${correctOption.title}`);
@@ -8646,7 +8660,6 @@ _cullBuildingBlocks(camera) {
                 this._advanceToNextQuiz();
             }, 1500);
         }
-
         /**
          * (新規追加) クイズの正解タイトルから、情報パネル表示用の「labelData」を検索する
          */
