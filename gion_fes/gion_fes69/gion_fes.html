@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ69</title>
+    <title>祇園祭 山鉾巡行シミュ69+</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -1297,7 +1297,7 @@
             text-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        .start-buttons-container {
+        #start-buttons-container {
             display: flex;
             flex-direction: column; /* ボタンを縦に並べる */
             align-items: center;
@@ -3659,6 +3659,11 @@ _updateLoadingStyles(percent) {
                     this.tutorialModal.style.display = 'none';
                 }
             });
+            // 5. (重要) すべての表示準備が終わったので、ボタンコンテナを表示する
+            const buttonContainer = document.getElementById('start-buttons-container');
+            if (buttonContainer) {
+                buttonContainer.style.visibility = 'visible';
+            }
         }
 
 // ▼▼▼ ★★★ 修正: この関数をまるごと新設 ★★★ ▼▼▼
@@ -9982,7 +9987,7 @@ _cullBuildingBlocks(camera) {
 <div id="start-screen">
         <div class="start-content">
             <h1 class="start-title">祇園祭シミュレーター<br>～山鉾巡行～</h1>
-            <div class="start-buttons-container">
+            <div id="start-buttons-container" style="visibility: hidden;">
                 <button id="start-new-btn" class="start-button primary">最初からはじめる</button>                
                 <button id="continue-btn" class="start-button primary">続きからはじめる</button>       
                 <button id="tutorial-btn" class="start-button secondary">チュートリアル</button>
