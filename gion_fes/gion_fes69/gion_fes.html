@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>祇園祭 山鉾巡行シミュ69+</title>
+    <title>祇園祭 山鉾巡行シミュ69++</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
@@ -3989,10 +3989,8 @@ _displayTutorial() {
                     
                     loadJSON(`../asset_json_final/labels_300.json`),
                     loadJSON(`../asset_json_final/kyomachiya_points.json`),
-                    
-                    // ▼▼▼ ここを修正 ▼▼▼
                     loadJSON(`../asset_json_final/スタンプラリー改.json`).catch(e => { console.warn('スタンプラリー改.json not found, skipping.'); return []; }),
-                    // ▲▲▲ 修正ここまで ▲▲▲
+                    loadJSON(`../asset_json_final/祇園祭データ.json`).catch(e => { console.warn('祇園祭データ.json not found, skipping.'); return []; }),
 
                     // ▼▼▼ クイズファイルの読み込みを動的に追加 ▼▼▼
                     ...this.quizFilePaths.map(file => 
@@ -4054,7 +4052,7 @@ _displayTutorial() {
                     otherLabelsJsonData,
                     kyomachiyaPointsJsonData,
                     stampRallyJsonData,
-
+                    gionFesDataJson,//ついでに祇園祭データもここで
                     // ▼▼▼ クイズデータを受け取る ▼▼▼
                     ...quizResults
                     // ▲▲▲ クイズデータここまで ▲▲▲
@@ -4085,7 +4083,7 @@ _displayTutorial() {
                 this.otherLabelsData = otherLabelsJsonData;
                 this.kyomachiyaPointsData = kyomachiyaPointsJsonData;
                 this.stampRallyData = stampRallyJsonData;
-
+                this.gionFesData = gionFesDataJson;
                 this.tutorialData = tutorialJsonData;
                 this.videoEventsData = videoEventsData;
 
@@ -9222,29 +9220,31 @@ _cullBuildingBlocks(camera) {
             let infoHtml = '';
 
             // 3a. メイン情報
-            infoHtml += `<h3 style="margin-top: 0;">${data.行事名 || '祇園祭'}</h3>`;
-            infoHtml += `<p><strong>日付:</strong> ${data.年月日 || '不明'} | <strong>天気:</strong> ${data.天気 || '不明'}</p>`;
-            infoHtml += `<p>${data.当日の様子 || '詳細情報なし'}</p>`;
-
-            // 3b. 巡行の順番 (ご要望通り、CSSクラスを付与)
-            if (data.巡行の順番 && data.巡行の順番.length > 0) {
-                infoHtml += `<div class="gion-data-details">`;
-                infoHtml += `<h4>巡行の順番</h4>`;
-                infoHtml += `<ul class="procession-order-list">`;
-                
-                data.巡行の順番.forEach(item => {
-                    // CSS grid用に li > span + span の構造にする
-                    infoHtml += `<li><span>${item.くじ順}:</span> <span>${item.山鉾名}</span></li>`;
+            infoHtml += `<h3 style="margin-top: 0;">${data.行事名称 || '祇園祭'}</h3>`;
+            infoHtml += `<p><strong>日付:</strong> ${data["日　　程"] || '不明'} | <strong>天気:</strong> ${data["天　　気"] || '不明'} | <strong>人手:</strong> ${data["人　　手"] || '不明'}</p>`;
+            
+            // ▼▼▼ ここから修正 ▼▼▼
+            // 3b. トピックの処理
+            if (Array.isArray(data.トピック) && data.トピック.length > 0) {
+                // "トピック"が配列の場合、箇条書き(<ul>)に変換
+                infoHtml += '<ul style="margin: 10px 0 0 20px; padding-left: 0;">';
+                data.トピック.forEach(item => {
+                    infoHtml += `<li style="margin-bottom: 8px;">${item}</li>`;
                 });
-                
-                infoHtml += `</ul></div>`;
+                infoHtml += '</ul>';
+            } else if (data.トピック) {
+                // "トピック"が文字列の場合（古い形式へのフォールバック）
+                infoHtml += `<p>${data.トピック}</p>`;
+            } else {
+                // "トピック"自体がない場合
+                infoHtml += '<p>詳細情報なし</p>';
             }
+            // ▲▲▲ 修正ここまで ▲▲▲
 
             // 4. 既存の #info-overlay にHTMLを挿入して表示
             this.infoOverlayText.innerHTML = infoHtml;
             this.infoOverlay.classList.add('visible');
-        }
-
+        }        
         createYoutubeClickableLogo(videoInfo) { 
             const div = document.createElement('div');
             div.className = 'youtube-bubble'; 
