@@ -1,0 +1,48 @@
+[
+  {
+    "stampRallyId": 1,
+    "title": "山鉾町めぐり・その１",
+    "locations": [
+      {"name": "長刀鉾町会所","GML_ID": "bldg_97381698-3ab1-439a-a1d3-17fcd6477fa0", "image": "長刀鉾町会所.jpg"},
+      {"name": "函谷鉾町会所","GML_ID": "bldg_c744db0c-766b-4160-bc06-8f52dc2d59c2", "image": "函谷鉾町会所.jpg"},
+      {"name": "月鉾町会所","GML_ID": "bldg_e52f12f1-cfd9-4f3e-9ed1-1c714206bf0d", "image": "月鉾町会所.jpg"},
+      {"name": "郭巨山町会所","GML_ID": "bldg_cb628085-67b7-4f9e-85fb-fe0d4aa1058f", "image": "郭巨山町会所.jpg"},
+      {"name": "蟷螂山町会所","GML_ID": "bldg_fa56fec1-6e73-473f-add8-228bec0b4aa6", "image": "蟷螂山町会所.jpg"}
+    ]
+  },
+  {
+    "stampRallyId": 2,
+    "title": "山鉾町めぐり・その２",
+    "locations": [
+      {"name": "太子山町会所（秦家住宅）","GML_ID": "bldg_fb1b10a6-a2b1-4313-ac5a-91a0177d5fc3", "image": "太子山町会所（秦家住宅）.jpg"},
+      {"name": "油天神（火尊天満宮）","GML_ID": "bldg_d03f2276-b8d9-4533-b945-4be4c4803f5b", "image": "油天神（火尊天満宮）.jpg"},
+      {"name": "芦刈山町会所","GML_ID": "bldg_3860db96-4500-4d7e-8886-ea928b667a22", "image": "芦刈山町会所.jpg"},
+      {"name": "伯牙山町会所(杉本家住宅)","GML_ID": "bldg_ea8ad2aa-427c-4e10-a04d-50b8a1b8dbc8", "image": "伯牙山町会所(杉本家住宅).jpg"},
+      {"name": "船鉾町会所","GML_ID": "bldg_b53411a1-7664-4196-9389-5a917a7a19ad", "image": "船鉾町会所.jpg"},
+      {"name": "岩戸山町会所","GML_ID": "bldg_62ef2edb-e922-4ee7-9037-90e669f97a2a", "image": "岩戸山町会所.jpg"}
+    ]
+  },
+  {
+    "stampRallyId": 3,
+    "title": "山鉾町めぐり・その３",
+    "locations": [
+      {"name": "白楽天山町会所","GML_ID": "bldg_b6f7e8f6-1f8d-4183-885a-b7fc394afc77", "image": "白楽天山町会所.jpg"},
+      {"name": "鶏鉾町会所","GML_ID": "bldg_41f87d96-2ca2-4c11-9529-da5ebb537194", "image": "鶏鉾町会所.jpg"},
+      {"name": "綾傘鉾町会所（大原神社）","GML_ID": "bldg_446da9f0-df82-48f3-ab9c-2103e9849c63", "image": "綾傘鉾町会所（大原神社）.jpg"},
+      {"name": "菊水鉾町会所","GML_ID": "bldg_671b71cf-4455-4bce-86d1-b686aa051392", "image": "菊水鉾町会所.jpg"},
+      {"name": "霰天神山町会所","GML_ID": "bldg_55f6876c-6775-4053-aee0-a6a33f5edf9a", "image": "霰天神山町会所.jpg"},
+      {"name": "放下鉾町会所","GML_ID": "bldg_5ac730d5-7f4f-42a8-acef-11d8929145c5", "image": "放下鉾町会所.jpg"}
+    ]
+  },
+  {
+    "stampRallyId": 4,
+    "title": "三条通で近代建築物巡り",
+    "locations": [
+      {"name": "旧毎日新聞社京都支局１棟","GML_ID": "bldg_5be0a879-69e0-49a0-bb05-00a4efe994d4", "image": "旧毎日新聞社京都支局１棟.jpg"},
+      {"name": "SACRA（旧不動貯金銀行京都支店）","GML_ID": "bldg_77ff2eb9-702b-4f36-b25e-53bd2cf7d88c", "image": "SACRA（旧不動貯金銀行京都支店）.jpg"},
+      {"name": "日本生命京都三条ビル（界）","GML_ID": "bldg_bda3a104-02fc-48ec-a0cb-3e52dce26c9d", "image": "日本生命京都三条ビル（界）.jpg"},
+      {"name": "旧日本銀行京都支店","GML_ID": "bldg_01580c84-3a05-49ae-a2d2-4cfa7d299596", "image": "旧日本銀行京都支店.jpg"},
+      {"name": "中京郵便局旧庁舎外観１棟","GML_ID": "bldg_6f4a79f5-3e48-49b6-b666-787bffa62509", "image": "中京郵便局旧庁舎外観１棟.jpg"}
+    ]
+  }
+]
