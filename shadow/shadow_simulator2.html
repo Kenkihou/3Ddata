@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>日影規制シミュレーターR071201ver</title>
+    <style>
+        body { margin: 0; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: "Helvetica Neue", Arial, sans-serif; }
+        #container { flex-grow: 1; position: relative; width: 100%; overflow: hidden; }
+        
+        /* コントロールパネル */
+        #controls { 
+            padding: 15px 20px; 
+            background: #f8f9fa; 
+            border-top: 1px solid #ddd; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+            flex-shrink: 0;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+        }
+        .control-row { display: flex; align-items: center; font-size: 14px; }
+        
+        /* ラベル */
+        .label-left { width: 150px; font-weight: bold; color: #333; flex-shrink: 0; }
+        .value-right { width: 90px; text-align: right; font-family: monospace; font-size: 16px; font-weight: bold; color: #444; margin-left: 10px; white-space: nowrap; }
+        
+        /* --- スライダー (目盛り付き) --- */
+        input[type=range] {
+            -webkit-appearance: none;
+            appearance: none; /* 標準プロパティを追加 */
+            width: 100%;
+            background: transparent;
+            margin: 0;
+            cursor: pointer;
+        }
+        input[type=range]:focus { outline: none; }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 14px;
+            cursor: pointer;
+            background: #e0e0e0;
+            border-radius: 7px;
+            border: 1px solid #ccc;
+        }
+        
+        #timeSlider::-webkit-slider-runnable-track {
+            background-image: linear-gradient(to right, #888 2px, transparent 0);
+            background-size: 12.5% 100%; 
+            background-position: 1px center;
+            background-repeat: repeat-x;
+        }
+        
+        #isoSlider::-webkit-slider-runnable-track {
+            background-image: linear-gradient(to right, #888 2px, transparent 0);
+            background-size: 33.33% 100%;
+            background-position: 1px center;
+            background-repeat: repeat-x;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #2196F3;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+        }
+
+        /* --- トグルスイッチ --- */
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            margin-right: 30px;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider-round {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider-round:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input:checked + .slider-round { background-color: #2196F3; }
+        input:checked + .slider-round:before { transform: translateX(24px); }
+        
+        .toggle-label { cursor: default; font-weight: bold; color: #555; }
+
+        /* 情報ボックス */
+        #info { 
+            position: absolute; 
+            top: 15px; 
+            left: 15px; 
+            background: rgba(255,255,255,0.95); 
+            padding: 15px; 
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            pointer-events: none; 
+            user-select: none;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 2px;}
+        .legend-color { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    
+    <div id="info">
+        <div style="font-weight:bold; margin-bottom:5px; font-size:14px;">設定パラメータ</div>
+        緯度: 北緯 35.02° (京都)<br>
+        経度: 東経 135.73°<br>
+        時刻基準: 真太陽時<br>
+        <hr style="margin: 10px 0; border: none; border-top: 1px solid #eee;">
+        <div style="font-weight:bold; margin-bottom:5px; font-size:14px;">凡例</div>
+        <div class="legend-item"><span class="legend-color" style="background:rgba(255,0,0,0.5)"></span> 等時間日影 (赤)</div>
+        <div class="legend-item"><span class="legend-color" style="background:gray; height:2px;"></span> 1時間ごとの影 (灰)</div>
+        <div class="legend-item"><span class="legend-color" style="background:black; height:3px;"></span> 現在の影 (黒太)</div>
+        <div class="legend-item"><span class="legend-color" style="background:#00aaff"></span> 測定面 (H=4m)</div>
+    </div>
+
+    <div id="controls">
+        <div class="control-row">
+            <span class="label-left">時刻日影(真太陽時)</span>
+            <input type="range" id="timeSlider" min="8" max="16" step="0.05" value="8.00">
+            <span id="timeDisplay" class="value-right">08:00</span>
+        </div>
+
+        <div class="control-row">
+            <span class="label-left">等時間日影</span>
+            <input type="range" id="isoSlider" min="2" max="5" step="0.1" value="2.0">
+            <span id="isoDisplay" class="value-right">2.0 時間</span>
+        </div>
+
+        <div class="control-row" style="margin-top: 5px;">
+            <div class="toggle-group">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleHourly" checked>
+                    <span class="slider-round"></span>
+                </label>
+                <span class="toggle-label">全時刻日影を表示</span>
+            </div>
+
+            <div class="toggle-group">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleRealShadow" checked>
+                    <span class="slider-round"></span>
+                </label>
+                <span class="toggle-label">実日影を表示</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+    <script src="https://unpkg.com/d3-polygon@1"></script> 
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- 設定 ---
+        const LATITUDE = 35.0167; 
+        const LONGITUDE = 135.7333;
+        const DATE_WINTER_SOLSTICE = new Date('2024-12-22T12:00:00');
+        const BUILDING_WIDTH = 10;
+        const BUILDING_DEPTH = 15;
+        const BUILDING_HEIGHT = 20;
+        const MEASUREMENT_HEIGHT = 4; 
+
+        // 精度設定
+        const SIMULATION_STEP_MIN = 2; 
+        const GRID_STEP = 0.25; 
+        const GRID_SIZE = 80; 
+
+        // --- Three.js 初期設定 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xb0c4de);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 80, 80); 
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.shadowMap.enabled = true; 
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0x606060); 
+        scene.add(ambientLight);
+
+        // --- シーン構成 ---
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(1000, 1000), 
+            new THREE.MeshLambertMaterial({ color: 0xeeeeee, side: THREE.DoubleSide })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 建物 (半透明・depthWrite: false)
+        const buildingGeometry = new THREE.BoxGeometry(BUILDING_WIDTH, BUILDING_HEIGHT, BUILDING_DEPTH);
+        const buildingMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x0066ff, 
+            opacity: 0.5, 
+            transparent: true,
+            depthWrite: false, 
+            side: THREE.DoubleSide
+        });
+        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+        building.position.y = BUILDING_HEIGHT / 2;
+        building.castShadow = true;
+        
+        // ワイヤーフレーム (黒色・対角線なし)
+        const edgesGeometry = new THREE.EdgesGeometry(buildingGeometry);
+        const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+        const buildingEdges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+        building.add(buildingEdges); 
+
+        scene.add(building);
+
+        // 測定面
+        const measurePlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(1000, 1000),
+            new THREE.MeshBasicMaterial({ 
+                color: 0x00aaff, 
+                opacity: 0.1, 
+                transparent: true, 
+                depthWrite: false, 
+                side: THREE.DoubleSide 
+            })
+        );
+        measurePlane.rotation.x = -Math.PI / 2;
+        measurePlane.position.y = MEASUREMENT_HEIGHT;
+        scene.add(measurePlane);
+
+        const hourlyShadowsGroup = new THREE.Group();
+        hourlyShadowsGroup.position.y = MEASUREMENT_HEIGHT + 0.02;
+        scene.add(hourlyShadowsGroup);
+
+        const shadowLine = new THREE.LineLoop(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 })
+        );
+        shadowLine.position.y = MEASUREMENT_HEIGHT + 0.03; 
+        scene.add(shadowLine);
+
+        // 等時間日影エリア
+        let isoMesh = new THREE.Mesh(
+            new THREE.BufferGeometry(), 
+            new THREE.MeshBasicMaterial({ 
+                color: 0xff0000, 
+                opacity: 0.5, 
+                transparent: true, 
+                depthWrite: false, 
+                side: THREE.DoubleSide 
+            })
+        );
+        let isoLine = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }));
+        isoMesh.position.y = MEASUREMENT_HEIGHT + 0.01;
+        isoMesh.rotation.x = Math.PI / 2; 
+        isoLine.position.y = MEASUREMENT_HEIGHT + 0.01; 
+        scene.add(isoMesh);
+        scene.add(isoLine);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048; 
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.left = -50;
+        sunLight.shadow.camera.right = 50;
+        sunLight.shadow.camera.top = 50;
+        sunLight.shadow.camera.bottom = -50;
+        scene.add(sunLight);
+        scene.add(sunLight.target); 
+
+        const sunSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        scene.add(sunSphere);
+
+        // --- 方位記号 ---
+        function initCompass() {
+            const group = new THREE.Group();
+            group.position.set(30, 0.1, 30);
+            const len = 8;
+            const thick = 0.15;
+            const color = 0x000000; 
+
+            const axes = [
+                { dir: new THREE.Vector3(0,0,-1), txt: 'N', offset: new THREE.Vector3(0,0,-2) },
+                { dir: new THREE.Vector3(0,0, 1), txt: 'S', offset: new THREE.Vector3(0,0, 2) },
+                { dir: new THREE.Vector3( 1,0,0), txt: 'E', offset: new THREE.Vector3(2,0, 0) },
+                { dir: new THREE.Vector3(-1,0,0), txt: 'W', offset: new THREE.Vector3(-2,0, 0) }
+            ];
+
+            const loader = new THREE.FontLoader();
+            loader.load('https://unpkg.com/three@0.128.0/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+                axes.forEach(ax => {
+                    const lineLen = len;
+                    const cylinderGeo = new THREE.CylinderGeometry(thick, thick, lineLen, 8);
+                    cylinderGeo.translate(0, lineLen / 2, 0); 
+                    cylinderGeo.rotateX(Math.PI / 2); 
+                    
+                    const mesh = new THREE.Mesh(cylinderGeo, new THREE.MeshBasicMaterial({ color: color }));
+                    
+                    const quaternion = new THREE.Quaternion();
+                    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ax.dir); 
+                    mesh.applyQuaternion(quaternion);
+                    
+                    group.add(mesh);
+
+                    const tGeo = new THREE.TextGeometry(ax.txt, { font: font, size: 2, height: 0.1 });
+                    tGeo.computeBoundingBox();
+                    const centerOffset = -0.5 * (tGeo.boundingBox.max.x - tGeo.boundingBox.min.x);
+                    tGeo.translate(centerOffset, 0, 0);
+                    const tMesh = new THREE.Mesh(tGeo, new THREE.MeshBasicMaterial({ color: color }));
+                    
+                    const pos = ax.dir.clone().multiplyScalar(len).add(ax.offset);
+                    tMesh.position.set(pos.x, 0.5, pos.z);
+                    tMesh.rotation.x = -Math.PI / 2;
+                    group.add(tMesh);
+                });
+                scene.add(group);
+            });
+        }
+
+        // --- グリッドデータ ---
+        const gridData = [];
+        function initIsoGrid() {
+            const halfSize = GRID_SIZE / 2;
+            gridData.length = 0;
+            for (let x = -halfSize; x <= halfSize; x += GRID_STEP) {
+                for (let z = -halfSize; z <= halfSize; z += GRID_STEP) {
+                    gridData.push({ x: x, z: z, duration: 0 });
+                }
+            }
+        }
+
+        // --- 計算ロジック ---
+        function getSunVector(userHours) {
+            const times = SunCalc.getTimes(DATE_WINTER_SOLSTICE, LATITUDE, LONGITUDE);
+            const solarNoon = times.solarNoon;
+            const offsetHours = userHours - 12.0;
+            const targetDate = new Date(solarNoon.getTime() + offsetHours * 60 * 60 * 1000);
+            const sunPos = SunCalc.getPosition(targetDate, LATITUDE, LONGITUDE);
+            
+            const r = Math.cos(sunPos.altitude);
+            const x = r * -Math.sin(sunPos.azimuth); 
+            const y = Math.sin(sunPos.altitude);
+            const z = r * Math.cos(sunPos.azimuth);
+            return new THREE.Vector3(x, y, z).normalize();
+        }
+
+        function getShadowHull(sunVec) {
+            if (sunVec.y <= 0) return null;
+            const hw = BUILDING_WIDTH / 2;
+            const hd = BUILDING_DEPTH / 2;
+            const h  = BUILDING_HEIGHT;
+            const mh = MEASUREMENT_HEIGHT;
+            
+            const px_factor = 1.0 / sunVec.y; 
+            const offset_x = sunVec.x * px_factor;
+            const offset_z = sunVec.z * px_factor;
+
+            const points2d = [
+                [hw + (mh - h) * offset_x, hd + (mh - h) * offset_z],
+                [-hw + (mh - h) * offset_x, hd + (mh - h) * offset_z],
+                [-hw + (mh - h) * offset_x, -hd + (mh - h) * offset_z],
+                [hw + (mh - h) * offset_x, -hd + (mh - h) * offset_z],
+                [hw, hd], [-hw, hd], [-hw, -hd], [hw, -hd]
+            ];
+            return d3.polygonHull(points2d);
+        }
+
+        function runFullSimulation() {
+            for(let i=0; i<gridData.length; i++) gridData[i].duration = 0;
+            const stepHours = SIMULATION_STEP_MIN / 60;
+            const halfStep = stepHours / 2;
+            for (let t = 8.0 + halfStep; t < 16.0; t += stepHours) {
+                const sunVec = getSunVector(t);
+                if (sunVec.y <= 0) continue;
+                const hull = getShadowHull(sunVec);
+                if (hull) {
+                    for (let i = 0; i < gridData.length; i++) {
+                        const p = gridData[i];
+                        if (d3.polygonContains(hull, [p.x, p.z])) {
+                            p.duration += SIMULATION_STEP_MIN;
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateHourlyShadows() {
+            while(hourlyShadowsGroup.children.length > 0){ 
+                hourlyShadowsGroup.children[0].geometry.dispose();
+                hourlyShadowsGroup.remove(hourlyShadowsGroup.children[0]); 
+            }
+            if (!document.getElementById('toggleHourly').checked) {
+                renderer.render(scene, camera);
+                return;
+            }
+            for (let h = 8; h <= 16; h++) {
+                const sunVec = getSunVector(h);
+                const hull = getShadowHull(sunVec);
+                if (hull && hull.length >= 3) {
+                    const shadowPoints = hull.map(p => new THREE.Vector3(p[0], 0, p[1]));
+                    const pts = [...shadowPoints, shadowPoints[0]]; 
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+                    const lineMat = new THREE.LineBasicMaterial({ color: 0x666666, linewidth: 1 });
+                    const lineLoop = new THREE.LineLoop(lineGeo, lineMat);
+                    hourlyShadowsGroup.add(lineLoop);
+                }
+            }
+            renderer.render(scene, camera);
+        }
+
+        function updateIsoShape() {
+            const targetHours = parseFloat(document.getElementById('isoSlider').value);
+            document.getElementById('isoDisplay').innerText = `${targetHours.toFixed(1)} 時間`;
+            const targetMin = targetHours * 60;
+            const redPoints = [];
+            const threshold = targetMin - 0.1;
+
+            for (let i = 0; i < gridData.length; i++) {
+                if (gridData[i].duration >= threshold) {
+                    redPoints.push([gridData[i].x, gridData[i].z]);
+                }
+            }
+
+            if (redPoints.length < 3) {
+                isoMesh.visible = false;
+                isoLine.visible = false;
+                renderer.render(scene, camera);
+                return;
+            }
+
+            const hullPoly = d3.polygonHull(redPoints);
+            if (hullPoly) {
+                isoMesh.visible = true;
+                isoLine.visible = true;
+                const shape = new THREE.Shape();
+                shape.moveTo(hullPoly[0][0], hullPoly[0][1]);
+                for (let i = 1; i < hullPoly.length; i++) {
+                    shape.lineTo(hullPoly[i][0], hullPoly[i][1]);
+                }
+                shape.closePath();
+                isoMesh.geometry.dispose();
+                isoMesh.geometry = new THREE.ShapeGeometry(shape);
+                isoMesh.rotation.x = Math.PI / 2; 
+                const linePoints = hullPoly.map(p => new THREE.Vector3(p[0], 0, p[1])); 
+                isoLine.geometry.dispose();
+                isoLine.geometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+            }
+            renderer.render(scene, camera);
+        }
+
+        function updateRealShadow() {
+            const isChecked = document.getElementById('toggleRealShadow').checked;
+            sunLight.castShadow = isChecked;
+            renderer.render(scene, camera);
+        }
+
+        function updateTime() {
+            const tVal = parseFloat(document.getElementById('timeSlider').value);
+            const h = Math.floor(tVal);
+            const m = Math.round((tVal % 1) * 60);
+            
+            document.getElementById('timeDisplay').innerText = 
+                `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+
+            const sunVec = getSunVector(tVal);
+            const dist = 50;
+            sunLight.position.copy(sunVec).multiplyScalar(dist);
+            sunSphere.position.copy(sunVec).multiplyScalar(40);
+
+            const hull = getShadowHull(sunVec);
+            shadowLine.geometry.dispose();
+            if (hull && hull.length >= 3) {
+                const shadowPoints = hull.map(p => new THREE.Vector3(p[0], 0, p[1]));
+                const pts = [...shadowPoints, shadowPoints[0]]; 
+                shadowLine.geometry.setFromPoints(pts);
+            } else {
+                shadowLine.geometry = new THREE.BufferGeometry();
+            }
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.render(scene, camera);
+        }
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.addEventListener('change', () => renderer.render(scene, camera));
+        
+        document.getElementById('timeSlider').addEventListener('input', updateTime);
+        document.getElementById('isoSlider').addEventListener('input', updateIsoShape); 
+        document.getElementById('toggleHourly').addEventListener('change', updateHourlyShadows);
+        document.getElementById('toggleRealShadow').addEventListener('change', updateRealShadow);
+
+        window.addEventListener('resize', onWindowResize);
+
+        initCompass();
+        initIsoGrid();
+        
+        runFullSimulation(); 
+        updateIsoShape();    
+        updateTime();
+        
+        // ★新規: 初期描画時に1時間ごとの影も表示
+        updateHourlyShadows();
+        
+        onWindowResize();
+
+    </script>
+</body>
+</html>
