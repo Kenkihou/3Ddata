@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>構造力学シミュレーター（１質点系・非減衰自由振動（作成中））</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: #f0f0f0; 
+        }
+        
+        #container { 
+            display: flex; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+
+        #canvas-wrapper { 
+            flex-grow: 1; 
+            position: relative; 
+            background: #ffffff; 
+            overflow: hidden; 
+            cursor: default; 
+        }
+
+        /* 寸法ラベル (a=, b=) */
+        .dim-label {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 2px solid #2980b9; 
+            font-family: Consolas, monospace;
+            font-size: 15px;
+            font-weight: bold;
+            color: #2980b9;
+            pointer-events: none;
+            white-space: nowrap;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            z-index: 20;
+            opacity: 0; 
+            transition: opacity 0.2s ease-out;
+        }
+        
+        .e-label { border-color: #27ae60; color: #27ae60; }
+        .p-label { border-color: #e74c3c; color: #e74c3c; }
+
+        /* ハンドル説明用ラベル */
+        .handle-label {
+            position: absolute;
+            background: #34495e;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            z-index: 15;
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+        .handle-label-right { transform: translate(10px, -50%); }
+        .handle-label-right::after {
+            content: ''; position: absolute; left: -5px; top: 50%; transform: translateY(-50%);
+            border-width: 5px 5px 5px 0; border-style: solid; border-color: transparent #34495e transparent transparent;
+        }
+        .handle-label-left { transform: translate(-100%, -50%); margin-left: -10px; }
+        .handle-label-left::after {
+            content: ''; position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
+            border-width: 5px 0 5px 5px; border-style: solid; border-color: transparent transparent transparent #34495e;
+        }
+        .handle-label-above { transform: translate(-50%, -100%); margin-top: -10px; }
+        .handle-label-above::after {
+            content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%);
+            border-width: 5px 5px 0 5px; border-style: solid; border-color: #34495e transparent transparent transparent;
+        }
+
+        /* 右サイドパネル */
+        #ui-panel {
+            width: 340px;
+            flex-shrink: 0;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 24px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            z-index: 10;
+            user-select: none;
+            /* フォント統一 */
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+        }
+
+        h2 { 
+            font-size: 18px; 
+            font-weight: bold;
+            border-bottom: 1px solid #7f8c8d; 
+            padding-bottom: 12px; 
+            margin: 0 0 24px; 
+            letter-spacing: 0.05em;
+        }
+        
+        h3 { 
+            font-size: 15px; 
+            margin: 20px 0 8px; 
+            color: #3498db; 
+            font-weight: bold;
+        }
+        
+        .calc-block {
+            background: #34495e;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        
+        .calc-title { 
+            font-size: 13px; 
+            color: #bdc3c7; 
+            margin-bottom: 8px; 
+        }
+        
+        /* ★修正箇所: 数式部分のスタイル変更 */
+        .math-expr {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* ゴシック体を継承、斜体解除 */
+            font-family: inherit; 
+            font-style: normal;
+            font-size: 17px;
+            color: #ecf0f1;
+            margin-bottom: 8px;
+        }
+        
+        .fraction {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 6px;
+            vertical-align: middle;
+        }
+        
+        .numerator { 
+            border-bottom: 1px solid #ecf0f1; 
+            padding-bottom: 2px; 
+            margin-bottom: 2px; 
+            text-align: center; 
+        }
+        
+        .denominator { 
+            padding-top: 2px; 
+            text-align: center; 
+        }
+        
+        .calc-result { 
+            text-align: right; 
+            font-weight: bold; 
+            font-size: 19px;
+            color: #2ecc71; 
+            border-top: 1px solid #7f8c8d; 
+            padding-top: 8px; 
+            margin-top: 6px; 
+            font-family: "Helvetica Neue", Arial, sans-serif; 
+            font-style: normal; 
+            letter-spacing: 0.05em;
+        }
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+
+<div id="container">
+    <div id="canvas-wrapper">
+        <div id="label-a" class="dim-label">a = 1.0</div>
+        <div id="label-b" class="dim-label">b = 1.0</div>
+        <div id="label-E" class="dim-label e-label">E = 1.0x</div>
+        <div id="label-P" class="dim-label p-label">P = 1.0</div>
+        
+        <div id="label-handle" class="handle-label handle-label-right">断面寸法変更ハンドル</div>
+        <div id="label-handle-e" class="handle-label handle-label-left">ヤング係数変更ハンドル</div>
+        <div id="label-handle-p" class="handle-label handle-label-left">荷重変更ハンドル</div>
+    </div>
+
+    <div id="ui-panel">
+        <h2>１質点系・非減衰自由振動（作成中）</h2>
+        
+        <h3>計算結果 (Calculation)</h3>
+        
+        <div class="calc-block">
+            <div class="calc-title">断面二次モーメント (I)</div>
+            <div class="math-expr">
+                <span>I = </span>
+                <div class="fraction">
+                    <span class="numerator">b · a<sup>3</sup></span>
+                    <span class="denominator">12</span>
+                </div>
+            </div>
+            <div class="calc-result" id="res-I">1.000 (相対値)</div>
+        </div>
+        
+        <div class="calc-block">
+            <div class="calc-title">たわみ量 (δ)</div>
+            <div class="math-expr">
+                <span>δ = </span>
+                <div class="fraction">
+                    <span class="numerator">P · L<sup>3</sup></span>
+                    <span class="denominator">3 · E · I</span>
+                </div>
+            </div>
+            <div class="calc-result" style="color:#e74c3c;" id="res-delta">0.000 (相対値)</div>
+        </div>
+
+        <div class="calc-block">
+            <div class="calc-title">たわみ角 (ρ/L)</div>
+            <div class="math-expr">
+                <span>θ = </span>
+                <div class="fraction">
+                    <span class="numerator">δ</span>
+                    <span class="denominator">L</span>
+                </div>
+            </div>
+            <div class="calc-result" style="color:#f1c40f;" id="res-theta">0.000 rad</div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    let width = canvasWrapper.clientWidth;
+    let height = canvasWrapper.clientHeight;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    const frustumSize = 20; 
+    let aspect = width / height;
+    const camera = new THREE.OrthographicCamera(
+        frustumSize * aspect / -2, frustumSize * aspect / 2,
+        frustumSize / 2, frustumSize / -2,
+        1, 1000
+    );
+    camera.position.set(0, -100, 6); 
+    camera.lookAt(0, 0, 3);          
+    camera.up.set(0, 0, 1);          
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    canvasWrapper.appendChild(renderer.domElement);
+
+    const COLUMN_H = 8.0; 
+    const SEGMENTS = 60; 
+    const DISPLAY_SCALE = 1.0; 
+    const SECTION_Z_POS = -3.0;
+
+    // --- 地盤 ---
+    const groundGroup = new THREE.Group();
+    groundGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-8,0,0), new THREE.Vector3(8,0,0)]), new THREE.LineBasicMaterial({color:0x000000, linewidth:2})));
+    const hatchPoints = []; for(let x=-8; x<=8; x+=0.5) hatchPoints.push(x,0,0, x-0.4,0,-0.6);
+    groundGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(hatchPoints,3)), new THREE.LineBasicMaterial({color:0x000000})));
+    scene.add(groundGroup);
+
+    // --- 柱 ---
+    const colGeo = new THREE.BufferGeometry();
+    const colPos = new Float32Array((SEGMENTS+1)*2*3);
+    const colIndices = []; for(let i=0;i<SEGMENTS;i++) colIndices.push(i*2, i*2+1, (i+1)*2, i*2+1, (i+1)*2+1, (i+1)*2);
+    colGeo.setAttribute('position', new THREE.BufferAttribute(colPos, 3)); colGeo.setIndex(colIndices);
+    const columnMesh = new THREE.Mesh(colGeo, new THREE.MeshBasicMaterial({ color: 0x95a5a6, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }));
+    scene.add(columnMesh);
+    const columnWire = new THREE.LineSegments(new THREE.EdgesGeometry(colGeo), new THREE.LineBasicMaterial({ color: 0x7f8c8d, linewidth: 2 }));
+    columnMesh.add(columnWire);
+    const redLines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9*2*3), 3)), new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }));
+    scene.add(redLines);
+
+    // --- 断面図 (本体) ---
+    const sectionGroup = new THREE.Group();
+    sectionGroup.position.set(0, 0, SECTION_Z_POS);
+    sectionGroup.rotation.x = -Math.PI / 2;
+    scene.add(sectionGroup);
+
+    const rectGeo = new THREE.PlaneGeometry(1, 1);
+    const rectMat = new THREE.MeshBasicMaterial({ color: 0x95a5a6, side: THREE.DoubleSide, transparent: true, opacity: 0.3 });
+    const sectionRect = new THREE.Mesh(rectGeo, rectMat);
+    sectionGroup.add(sectionRect);
+    sectionRect.add(new THREE.LineSegments(new THREE.EdgesGeometry(rectGeo), new THREE.LineBasicMaterial({ color: 0x7f8c8d }))); 
+
+    const hatchLineGeo = new THREE.BufferGeometry();
+    const hatchMaxPoints = 1200; 
+    hatchLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(hatchMaxPoints), 3));
+    const sectionHatch = new THREE.LineSegments(hatchLineGeo, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
+    sectionGroup.add(sectionHatch); 
+
+    // --- 荷重矢印 ---
+    const forceArrowGroup = new THREE.Group(); scene.add(forceArrowGroup);
+    const shaftMesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12), new THREE.MeshBasicMaterial({ color: 0xe74c3c }));
+    shaftMesh.geometry.rotateZ(-Math.PI/2); shaftMesh.geometry.translate(0.5,0,0); forceArrowGroup.add(shaftMesh);
+    const headMesh = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.5, 12), new THREE.MeshBasicMaterial({ color: 0xe74c3c }));
+    headMesh.geometry.rotateZ(-Math.PI/2); forceArrowGroup.add(headMesh);
+    const hitArrowGeo = new THREE.CylinderGeometry(0.6, 0.6, 2.5, 8); hitArrowGeo.rotateZ(-Math.PI / 2); hitArrowGeo.translate(1.0, 0, 0);
+    const hitArrow = new THREE.Mesh(hitArrowGeo, new THREE.MeshBasicMaterial({ visible: false }));
+    hitArrow.userData = { isHandle: true, type: 'P', visuals: [shaftMesh, headMesh] };
+    forceArrowGroup.add(hitArrow);
+
+
+    // ----------------------------------------------------------------
+    // 3. UIギズモ
+    // ----------------------------------------------------------------
+    const gizmoGroup = new THREE.Group();
+    gizmoGroup.position.set(0, -0.1, SECTION_Z_POS);
+    scene.add(gizmoGroup);
+
+    const handleMat = new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide }); // 青
+    const hoverColor = 0x3498db; const BAR_THICKNESS = 0.08; const BAR_LENGTH = 0.6;
+
+    function createBoxHandle(w, h, axis) {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), handleMat.clone()); mesh.rotation.x = -Math.PI / 2;
+        const hit = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(w,0.5), Math.max(h,0.5)), new THREE.MeshBasicMaterial({visible:false}));
+        hit.rotation.x = -Math.PI / 2; hit.add(mesh); hit.userData = { axis: axis, isHandle: true, type: 'dim', visual: mesh };
+        return hit;
+    }
+    const hitRight = createBoxHandle(BAR_THICKNESS, BAR_LENGTH, 'a'); gizmoGroup.add(hitRight);
+    const hitTop = createBoxHandle(BAR_LENGTH, BAR_THICKNESS, 'b'); gizmoGroup.add(hitTop);
+
+    const cornerContainer = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({visible:false}));
+    cornerContainer.rotation.x = -Math.PI/2;
+    const cornerGeo = new THREE.CircleGeometry(0.15, 32);
+    const cornerVisual = new THREE.Mesh(cornerGeo, handleMat.clone());
+    cornerContainer.add(cornerVisual);
+    cornerContainer.userData = { axis: 'both', isHandle: true, type: 'dim', visual: cornerVisual };
+    gizmoGroup.add(cornerContainer);
+
+    const eVisual = new THREE.Mesh(new THREE.CircleGeometry(0.15, 32), new THREE.MeshBasicMaterial({ color: 0x27ae60, side: THREE.DoubleSide }));
+    const eHit = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
+    eHit.rotation.x = -Math.PI / 2; eHit.add(eVisual); eHit.userData = { isHandle: true, type: 'E', visual: eVisual };
+    gizmoGroup.add(eHit);
+
+    const anchorTR = new THREE.Object3D(); gizmoGroup.add(anchorTR); 
+    const anchorBL = new THREE.Object3D(); gizmoGroup.add(anchorBL); 
+    const anchorTip = new THREE.Object3D(); scene.add(anchorTip);
+
+    const interactables = [hitRight, hitTop, cornerContainer, eHit, hitArrow];
+
+
+    // ----------------------------------------------------------------
+    // 4. ロジック
+    // ----------------------------------------------------------------
+    const state = { P: 1.0, E: 1.0, a: 1.0, b: 1.0 };
+    const ui = { 
+        resI: document.getElementById('res-I'), resDelta: document.getElementById('res-delta'), resTheta: document.getElementById('res-theta'),
+        labelA: document.getElementById('label-a'), labelB: document.getElementById('label-b'), labelE: document.getElementById('label-E'),
+        labelP: document.getElementById('label-P'),
+        labelHandle: document.getElementById('label-handle'), labelHandleE: document.getElementById('label-handle-e'), labelHandleP: document.getElementById('label-handle-p')
+    };
+    const SCALE_FACTOR = (COLUMN_H * (1/5)) / 5.0;
+    const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+    let isDragging = false; let activeHandle = null; let dragStartVal = 0; let dragStartMouse = { x: 0, y: 0 };
+
+    function update() {
+        const I_val = state.b * Math.pow(state.a, 3); ui.resI.innerText = I_val.toFixed(3) + " 倍";
+        const den = state.E * I_val; const ratio = (den > 0) ? state.P / den : 0; ui.resDelta.innerText = ratio.toFixed(3) + " 倍";
+        
+        // ★たわみ角計算: ratio=1 のとき 0.04rad, ratio=5 のとき 0.20rad
+        const theta = ratio * 0.04;
+        ui.resTheta.innerText = theta.toFixed(3) + " rad";
+
+        // 柱変形
+        const visualDelta = ratio * SCALE_FACTOR;
+        const positions = columnMesh.geometry.attributes.position;
+        const halfWidth = (state.a * DISPLAY_SCALE) / 2;
+        const redPos = redLines.geometry.attributes.position; let redIdx = 0; const redStep = SEGMENTS / 10;
+        for (let i = 0; i <= SEGMENTS; i++) {
+            const z = (i / SEGMENTS) * COLUMN_H;
+            const shape = (Math.pow(z, 2) * (3 * COLUMN_H - z)) / (2 * Math.pow(COLUMN_H, 3));
+            const centerX = visualDelta * shape;
+            const dShape = (6 * COLUMN_H * z - 3 * Math.pow(z, 2)) / (2 * Math.pow(COLUMN_H, 3));
+            const theta = Math.atan(visualDelta * dShape);
+            const cos = Math.cos(theta), sin = Math.sin(theta);
+            positions.setXYZ(i*2, centerX - halfWidth*cos, 0, z + halfWidth*sin); positions.setXYZ(i*2+1, centerX + halfWidth*cos, 0, z - halfWidth*sin);
+            if (i > 0 && i < SEGMENTS && i % redStep === 0) { redPos.setXYZ(redIdx++, positions.getX(i*2), 0, positions.getZ(i*2)); redPos.setXYZ(redIdx++, positions.getX(i*2+1), 0, positions.getZ(i*2+1)); }
+        }
+        positions.needsUpdate = true; redPos.needsUpdate = true; columnWire.geometry.dispose(); columnWire.geometry = new THREE.EdgesGeometry(columnMesh.geometry);
+
+        // 矢印更新
+        const tipX = positions.getX(SEGMENTS * 2); const tipZ = positions.getZ(SEGMENTS * 2);
+        forceArrowGroup.position.set(tipX - 2.0, 0, tipZ);
+        const shaftR = 0.02 + (state.P * 0.03); 
+        // ★修正: 矢羽根サイズ 1.5倍
+        const headR = (0.6 + (state.P * 0.05)) * 1.5;
+        shaftMesh.scale.set(1.5, shaftR, shaftR); headMesh.scale.set(1, headR, headR); headMesh.position.set(1.5, 0, 0);
+
+        // 断面図更新
+        const drawA = state.a * DISPLAY_SCALE; const drawB = state.b * DISPLAY_SCALE;
+        sectionRect.scale.set(drawA, drawB, 1); updateHatching(drawA, drawB, state.E);
+
+        // ギズモ配置
+        const halfA = drawA / 2; const halfB = drawB / 2;
+        hitRight.position.set(halfA, 0, 0); hitTop.position.set(0, 0, halfB); cornerContainer.position.set(halfA, 0, halfB); eHit.position.set(-halfA, 0, -halfB);
+        anchorTR.position.set(halfA, 0, halfB); anchorBL.position.set(-halfA, 0, -halfB);
+        anchorTip.position.set(tipX, 0, tipZ);
+
+        // ラベル更新
+        // ★修正: a=1.0 パネルの位置を下にずらす (+40px)
+        updateLabelSpecial(ui.labelA, hitRight, 20, 5, 'left'); ui.labelA.innerText = `a = ${state.a.toFixed(1)}`;
+        updateLabelSpecial(ui.labelB, anchorTR, 0, -25, 'right'); ui.labelB.innerText = `b = ${state.b.toFixed(1)}`;
+        updateLabelSpecial(ui.labelHandle, anchorTR, 20, -10, 'left');
+        updateLabelSpecial(ui.labelE, anchorBL, 0, 30, 'center'); ui.labelE.innerText = `E = ${state.E.toFixed(1)}x`;
+        updateLabelSpecial(ui.labelHandleE, anchorBL, -15, 0, 'right');
+        updateLabelSpecial(ui.labelP, anchorTip, 0, -50, 'center'); ui.labelP.innerText = `P = ${state.P.toFixed(1)}`;
+        updateLabelSpecial(ui.labelHandleP, forceArrowGroup, -15, 0, 'right');
+    }
+
+    function updateHatching(w, h, E) {
+        const step = 0.25 / E; const minK = -w/2 - h/2; const maxK = w/2 + h/2;
+        const positions = hatchLineGeo.attributes.position.array; let pIdx = 0;
+        for(let k = minK; k <= maxK; k += step) {
+            const points = [];
+            let y1 = -w/2 - k; if (y1 >= -h/2 && y1 <= h/2) points.push(-w/2, y1);
+            let y2 = w/2 - k; if (y2 >= -h/2 && y2 <= h/2) points.push(w/2, y2);
+            let x1 = -h/2 + k; if (x1 > -w/2 && x1 < w/2) points.push(x1, -h/2); 
+            let x2 = h/2 + k; if (x2 > -w/2 && x2 < w/2) points.push(x2, h/2);
+            if (points.length >= 4 && pIdx + 6 < 1200) { 
+                positions[pIdx++] = points[0]; positions[pIdx++] = points[1]; positions[pIdx++] = 0;
+                positions[pIdx++] = points[2]; positions[pIdx++] = points[3]; positions[pIdx++] = 0;
+            }
+        }
+        for(let i=pIdx; i<1200; i++) positions[i] = 0;
+        hatchLineGeo.attributes.position.needsUpdate = true; hatchLineGeo.setDrawRange(0, pIdx / 3);
+    }
+
+    function updateLabelSpecial(el, targetObj, offsetX, offsetY, alignMode, offsetVecStr = new THREE.Vector3()) {
+        const worldPos = new THREE.Vector3();
+        targetObj.getWorldPosition(worldPos);
+        worldPos.add(offsetVecStr);
+        const vec = worldPos.project(camera);
+        const screenX = (vec.x * .5 + .5) * width + offsetX;
+        const screenY = (vec.y * -.5 + .5) * height + offsetY;
+        el.style.left = `${screenX}px`; el.style.top = `${screenY}px`;
+        if (alignMode === 'left') el.style.transform = `translate(0, -50%)`; 
+        else if (alignMode === 'right') el.style.transform = `translate(-100%, -50%)`; 
+        else el.style.transform = `translate(-50%, -50%)`;
+        el.style.opacity = 1;
+    }
+
+    canvasWrapper.addEventListener('pointermove', onPointerMove);
+    canvasWrapper.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+
+    function onPointerMove(e) {
+        const rect = canvasWrapper.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        if (isDragging && activeHandle) {
+            const type = activeHandle.userData.type;
+            if (type === 'dim') {
+                const frustumHeight = 20; const frustumWidth = frustumHeight * aspect;
+                const worldX = mx * (frustumWidth / 2);
+                const worldZ = 3 + my * (frustumHeight / 2);
+                const distZ = worldZ - SECTION_Z_POS - gizmoGroup.position.y; 
+                const axis = activeHandle.userData.axis;
+                let newValA = state.a, newValB = state.b;
+                if (axis === 'a' || axis === 'both') newValA = (Math.abs(worldX) * 2) / DISPLAY_SCALE;
+                if (axis === 'b' || axis === 'both') newValB = (Math.abs(distZ) * 2) / DISPLAY_SCALE;
+                const clamp = (v) => Math.min(Math.max(Math.round(v * 10) / 10, 1.0), 2.0);
+                state.a = clamp(newValA); state.b = clamp(newValB);
+            } else if (type === 'E' || type === 'P') {
+                const dx = e.clientX - dragStartMouse.x; const dy = e.clientY - dragStartMouse.y;
+                const sensitivity = 0.05; // ★修正: 感度UP
+                const change = (type === 'E') ? (-dx + dy) * sensitivity : dx * sensitivity;
+                let calculateVal = dragStartVal + change;
+                if(type === 'E') state.E = Math.min(Math.max(Math.round(calculateVal * 10) / 10, 1.0), 5.0);
+                else state.P = Math.min(Math.max(Math.round(calculateVal * 10) / 10, 0.0), 5.0);
+            }
+            update(); return;
+        }
+
+        mouse.set(mx, my); raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(interactables, true);
+        // 青色
+        hitRight.userData.visual.material.color.setHex(0x2980b9); hitTop.userData.visual.material.color.setHex(0x2980b9);
+        cornerContainer.userData.visual.material.color.setHex(0x2980b9);
+        eHit.userData.visual.material.color.setHex(0x27ae60);
+        shaftMesh.material.color.setHex(0xe74c3c); headMesh.material.color.setHex(0xe74c3c);
+        activeHandle = null; canvasWrapper.style.cursor = 'default';
+
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            while(!obj.userData.isHandle && obj.parent) obj = obj.parent;
+            if(obj.userData.isHandle){
+                activeHandle = obj; canvasWrapper.style.cursor = 'pointer';
+                const type = obj.userData.type;
+                if(type === 'dim') {
+                    if(obj.userData.visual) obj.userData.visual.material.color.setHex(hoverColor);
+                } else if (type === 'E') obj.userData.visual.material.color.setHex(0x2ecc71);
+                else if (type === 'P') obj.userData.visuals.forEach(v => v.material.color.setHex(0xff7675));
+            }
+        }
+    }
+
+    function onPointerDown(e) {
+        if (activeHandle) {
+            isDragging = true; canvasWrapper.style.cursor = 'grabbing';
+            dragStartMouse.x = e.clientX; dragStartMouse.y = e.clientY;
+            dragStartVal = (activeHandle.userData.type === 'E') ? state.E : (activeHandle.userData.type === 'P') ? state.P : 0;
+            update();
+        }
+    }
+
+    function onPointerUp() { isDragging = false; canvasWrapper.style.cursor = activeHandle ? 'pointer' : 'default'; update(); }
+    window.addEventListener('resize', onResize);
+    function onResize() {
+        width = canvasWrapper.clientWidth; height = canvasWrapper.clientHeight;
+        renderer.setSize(width, height); aspect = width / height;
+        camera.left = frustumSize * aspect / -2; camera.right = frustumSize * aspect / 2;
+        camera.top = frustumSize / 2; camera.bottom = frustumSize / -2;
+        camera.updateProjectionMatrix(); update();
+    }
+    onResize(); update(); animate(); setTimeout(() => update(), 100);
+    function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+</script>
+</body>
+</html>
