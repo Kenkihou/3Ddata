@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>日影規制シミュレーターR071216</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body { margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; display: flex; flex-direction: row; font-family: "Helvetica Neue", Arial, sans-serif; color: #333; background: #f4f4f4; }
+        #left-sidebar { width: 150px; height: 100%; background: #fff; border-right: 1px solid #ccc; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; z-index: 10; box-sizing: border-box; }
+        #center-container { flex-grow: 1; height: 100%; position: relative; overflow: hidden; background: #b0c4de; cursor: default; }
+        #center-container.dragging { cursor: move; }
+        #right-sidebar { width: 250px; height: 100%; background: #fff; border-left: 1px solid #ccc; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; z-index: 10; box-sizing: border-box; }
+        .section { padding: 12px; border-bottom: 1px solid #eee; }
+        #left-sidebar .section { padding: 20px 15px; } 
+        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        h2 { margin: 0 0 10px 0; font-size: 13px; font-weight: bold; border-left: 4px solid #2196F3; padding-left: 6px; color: #444; line-height: 1.2; }
+        .info-text { font-size: 11px; line-height: 1.6; color: #555; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 8px; }
+        .legend-color { width: 12px; height: 12px; border-radius: 2px; display: inline-block; border: 1px solid rgba(0,0,0,0.1); }
+        .control-group { margin-bottom: 8px; }
+        .control-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+        .label-text { font-weight: bold; color: #444; font-size: 11px; }
+        .value-text { font-family: monospace; font-size: 12px; font-weight: bold; color: #333; }
+        .slider-container { display: flex; align-items: center; width: 100%; }
+        input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; background: transparent; margin: 0; cursor: pointer; box-sizing: border-box; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 5px; cursor: pointer; background: #e0e0e0; border-radius: 3px; border: 1px solid #ccc; }
+        input[type=range]::-webkit-slider-thumb { height: 14px; width: 14px; border-radius: 50%; background: #2196F3; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer; -webkit-appearance: none; margin-top: -5px; }
+        .slider-ruled::-webkit-slider-runnable-track { background-image: linear-gradient(to right, #999 2px, transparent 0); background-repeat: repeat-x; }
+        #timeSlider::-webkit-slider-runnable-track { background-size: 12.5% 100%; background-position: 1px center; }
+        #isoSlider::-webkit-slider-runnable-track { background-size: 33.33% 100%; background-position: 1px center; }
+        .toggle-row-combined { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+        .toggle-item { display: flex; align-items: center; cursor: default; }
+        .toggle-switch { position: relative; display: inline-block; width: 34px; height: 18px; margin-right: 6px; flex-shrink: 0; cursor: pointer; }
+        .toggle-switch.mini { width: 28px; height: 16px; margin-right: 0; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider-round { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider-round:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .mini .slider-round:before { height: 12px; width: 12px; left: 2px; bottom: 2px; }
+        input:checked + .slider-round { background-color: #2196F3; }
+        input:checked + .slider-round:before { transform: translateX(16px); }
+        .mini input:checked + .slider-round:before { transform: translateX(12px); }
+        .toggle-label { font-weight: bold; color: #444; font-size: 11px; user-select: none; white-space: nowrap; }
+        
+        #help-overlay { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.8); padding: 5px 15px; border-radius: 20px; font-size: 12px; pointer-events: none; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        #tooltip { position: absolute; bottom: 20px; right: 20px; background: rgba(0, 0, 0, 0.85); color: #fff; padding: 10px 15px; border-radius: 6px; font-size: 14px; font-weight: bold; pointer-events: none; white-space: nowrap; z-index: 1000; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+
+        .mode-toggle-container { display: flex; align-items: center; justify-content: center; margin-top: 8px; gap: 8px; }
+        .mode-label { font-size: 11px; font-weight: bold; color: #ccc; transition: color 0.3s; cursor: pointer; }
+        .mode-label.active { color: #333; }
+        .toggle-switch.custom-color input:not(:checked) + .slider-round { background-color: #2196F3; } 
+        .toggle-switch.custom-color input:checked + .slider-round { background-color: #FF5252; }
+
+        /* --- 建物操作パネル --- */
+        .dual-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .b-title { font-size: 11px; font-weight: bold; color: #444; display: flex; align-items: center; gap: 4px; }
+        .dual-grid { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 4px; align-items: center; }
+        .center-label { text-align: center; font-size: 11px; font-weight: bold; color: #444; line-height: 1.2; }
+        .slider-wrapper { display: flex; flex-direction: column; justify-content: center; width: 100%; }
+        .mini-val { 
+            display: block; text-align: center; font-size: 12px; font-weight: bold; font-family: monospace; color: #333; 
+            margin-bottom: 2px; margin-top: 0;
+        }
+        .slider-wrapper input[type=range] { margin-bottom: 12px; }
+
+        /* --- 測定点データパネル --- */
+        .meas-header { font-weight: bold; color: #333; font-size: 11px; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 8px; }
+        .meas-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr 1fr; /* 3列 */
+            gap: 4px; 
+        }
+        .meas-box {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 5px 2px;
+        }
+        .meas-box.span-3 {
+            grid-column: span 3; /* 横いっぱい */
+            margin-top: 2px;
+        }
+        
+        .meas-label { font-size: 9px; color: #555; margin-bottom: 2px; text-align: center; white-space: nowrap; line-height: 1.3; }
+        .meas-val { font-family: monospace; font-size: 11px; font-weight: bold; color: #333; }
+        
+        /* 合計欄のスタイル */
+        .meas-box.total { background: #fff0f0; border-color: #ffcdd2; padding: 8px 4px; }
+        .meas-box.total .meas-label { color: #d32f2f; font-size: 10px; }
+        .meas-box.total .meas-val { color: #d32f2f; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="left-sidebar">
+        <div class="section">
+            <h2>地理条件</h2>
+            <div class="info-text">京都 (35.02°, 135.73°)<br>冬至日・真太陽時</div>
+        </div>
+        <div class="section">
+            <h2>凡例</h2>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(255, 150, 150, 0.25)"></span> 1h～2h (薄)</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(255, 80, 80, 0.45)"></span> 2h～3h (明)</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(230, 0, 0, 0.65)"></span> 3h～4h (赤)</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(150, 0, 0, 0.85)"></span> 4h～5h (暗)</div>
+            <div class="legend-item"><span class="legend-color" style="background:rgba(80, 0, 0, 0.95)"></span> 5h以上 (黒)</div>
+            <div class="legend-item"><span class="legend-color" style="background:gray; height:2px;"></span> 全時刻日影 (CPU)</div>
+            <div class="legend-item"><span class="legend-color" style="background:black; height:3px;"></span> 時刻日影 (CPU)</div>
+            <div class="legend-item" style="margin-top:10px;"><span class="legend-color" style="background:blue; height:2px;"></span> 5mライン</div>
+            <div class="legend-item"><span class="legend-color" style="background:red; height:2px;"></span> 10mライン</div>
+            <div class="legend-item" style="margin-top:5px; font-weight:bold; color:blue;"><span class="legend-color" style="background:blue;"></span> 規制違反 (青色)</div>
+        </div>
+        <div class="section">
+            <h2>設定</h2>
+            <div class="info-text">測定面: GL+4m<br>計算: GPU(FullStep)<br>ステップ: 2分刻み</div>
+        </div>
+    </div>
+    
+    <div id="center-container">
+        <div id="help-overlay">建物・敷地・ピンをドラッグで移動</div>
+        <div id="tooltip"></div>
+    </div>
+    
+    <div id="right-sidebar">
+        <div class="section">
+            <h2>建物情報</h2>
+            <div class="dual-header">
+                <div class="b-title">建物１を表示 <label class="toggle-switch mini"><input type="checkbox" id="toggleB1" checked><span class="slider-round"></span></label></div>
+                <div class="b-title">建物２を表示 <label class="toggle-switch mini"><input type="checkbox" id="toggleB2" checked><span class="slider-round"></span></label></div>
+            </div>
+            <div class="dual-grid">
+                <div class="slider-wrapper">
+                    <span id="dispW1" class="mini-val">10.0 m</span>
+                    <input type="range" id="sliderW1" min="5" max="30" step="0.5" value="10">
+                </div>
+                <div class="center-label">幅<br>(W)</div>
+                <div class="slider-wrapper">
+                    <span id="dispW2" class="mini-val">10.0 m</span>
+                    <input type="range" id="sliderW2" min="5" max="30" step="0.5" value="10">
+                </div>
+                
+                <div class="slider-wrapper">
+                    <span id="dispD1" class="mini-val">15.0 m</span>
+                    <input type="range" id="sliderD1" min="5" max="30" step="0.5" value="15">
+                </div>
+                <div class="center-label">奥行<br>(D)</div>
+                <div class="slider-wrapper">
+                    <span id="dispD2" class="mini-val">15.0 m</span>
+                    <input type="range" id="sliderD2" min="5" max="30" step="0.5" value="15">
+                </div>
+
+                <div class="slider-wrapper">
+                    <span id="dispH1" class="mini-val">20.0 m</span>
+                    <input type="range" id="sliderH1" min="5" max="30" step="0.5" value="20">
+                </div>
+                <div class="center-label">高さ<br>(H)</div>
+                <div class="slider-wrapper">
+                    <span id="dispH2" class="mini-val">20.0 m</span>
+                    <input type="range" id="sliderH2" min="5" max="30" step="0.5" value="20">
+                </div>
+
+                <div class="slider-wrapper">
+                    <span id="dispR1" class="mini-val">0 °</span>
+                    <input type="range" id="sliderR1" min="-180" max="180" step="1" value="0">
+                </div>
+                <div class="center-label">回転<br>(R)</div>
+                <div class="slider-wrapper">
+                    <span id="dispR2" class="mini-val">0 °</span>
+                    <input type="range" id="sliderR2" min="-180" max="180" step="1" value="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>シミュレーション操作</h2>
+            <div class="control-group">
+                <div class="control-header"><span class="label-text">現在時刻</span><span id="timeDisplay" class="value-text">08:00</span></div>
+                <div class="slider-container"><input type="range" id="timeSlider" class="slider-ruled" min="8" max="16" step="0.0333" value="8.00"></div>
+            </div>
+            <div class="control-group">
+                <div class="control-header"><span class="label-text">等時間日影</span><span id="isoDisplay" class="value-text">2.0 時間</span></div>
+                <div class="slider-container"><input type="range" id="isoSlider" class="slider-ruled" min="1" max="5" step="0.1" value="2.0"></div>
+                <div class="mode-toggle-container">
+                    <span id="labelHourly" class="mode-label active">1時間刻み</span>
+                    <label class="toggle-switch mini custom-color">
+                        <input type="checkbox" id="toggleStepped">
+                        <span class="slider-round"></span>
+                    </label>
+                    <span id="labelStepped" class="mode-label">10分刻み</span>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h2 class="standalone">表示設定</h2>
+            <div class="mode-toggle-container" style="margin-bottom: 15px;">
+                <span id="label3D" class="mode-label active">3D表示</span>
+                <label class="toggle-switch mini custom-color">
+                    <input type="checkbox" id="toggle2D">
+                    <span class="slider-round"></span>
+                </label>
+                <span id="label2D" class="mode-label">2D表示</span>
+            </div>
+            <div class="toggle-row-combined">
+                <div class="toggle-item"><label class="toggle-switch"><input type="checkbox" id="toggleHourly" checked><span class="slider-round"></span></label><span class="toggle-label">全時刻日影</span></div>
+                <div class="toggle-item"><label class="toggle-switch"><input type="checkbox" id="toggleRealShadow" checked><span class="slider-round"></span></label><span class="toggle-label">実日影</span></div>
+            </div>
+            <div class="toggle-row-combined" style="margin-top: 10px;">
+                <div class="toggle-item" style="width:100%;">
+                    <label class="toggle-switch"><input type="checkbox" id="toggleWallShadow"><span class="slider-round"></span></label>
+                    <span class="toggle-label">立面日影 (壁面ヒートマップ)</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section" id="measurement-panel">
+            <div class="section-header"><h2>測定点（ピン）での日影時間 <span style="font-size:14px">📍</span></h2></div>
+            <div class="control-group">
+                <div class="meas-grid">
+                    <div class="meas-box">
+                        <span class="meas-label">建物１のみ<br>の日影時間</span>
+                        <span id="measB1Only" class="meas-val">0h 00m</span>
+                    </div>
+                    <div class="meas-box">
+                        <span class="meas-label">建物２のみ<br>の日影時間</span>
+                        <span id="measB2Only" class="meas-val">0h 00m</span>
+                    </div>
+                    <div class="meas-box">
+                        <span class="meas-label">１・２両方<br>の日影時間</span>
+                        <span id="measBoth" class="meas-val">0h 00m</span>
+                    </div>
+                    <div class="meas-box span-3 total">
+                        <span class="meas-label">現在時刻の通算日影時間 (合計)</span>
+                        <span id="measTotal" class="meas-val">0h 00m</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/d3-polygon@1"></script> 
+    <script src="https://unpkg.com/polygon-clipping@0.15.3/dist/polygon-clipping.umd.js"></script>
+
+    <script id="calcVertexShader" type="x-shader/x-vertex">
+        varying vec3 vWorldPosition;
+        uniform float uSize;
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            float halfSize = uSize * 0.5;
+            vWorldPosition = vec3(uv.x * uSize - halfSize, 0.0, (1.0 - uv.y) * uSize - halfSize);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    
+    <script id="calcFragmentShader" type="x-shader/x-fragment">
+        #define MAX_BUILDINGS 2
+        #define MAX_STEPS 250
+        uniform vec3 uSunVectors[MAX_STEPS]; 
+        uniform int uCurrentIndex;           
+        uniform float uIsoThreshold;
+        uniform mat4 uInvMatrices[MAX_BUILDINGS]; 
+        uniform bool uIsVisible[MAX_BUILDINGS];   
+        uniform float uStepMin;
+        uniform vec3 uBuildingPos[MAX_BUILDINGS];
+        uniform float uCutoffRadius;
+        uniform int uColorMode; 
+        uniform float uMeasurementHeight; 
+        uniform vec2 uSitePoly[4];
+        uniform bool uIs2D; 
+
+        varying vec3 vWorldPosition;
+
+        float sdPolygon(in vec2 p, in vec2[4] v) {
+            float d = dot(p - v[0], p - v[0]);
+            float s = 1.0;
+            for(int i = 0; i < 4; i++) {
+                vec2 j = v[(i + 1) % 4];
+                vec2 k = v[i];
+                vec2 e = j - k;
+                vec2 w = p - k;
+                vec2 b = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0);
+                d = min(d, dot(b, b));
+                bvec3 cond = bvec3(p.y >= k.y, p.y < j.y, e.x * w.y > e.y * w.x);
+                if (all(cond) || all(not(cond))) s *= -1.0;
+            }
+            return s * sqrt(d);
+        }
+
+        bool intersectBox(vec3 origin, vec3 dir) {
+            vec3 boxMin = vec3(-0.5, 0.0, -0.5); 
+            vec3 boxMax = vec3( 0.5, 1.0,  0.5);
+            vec3 invDir = 1.0 / dir;
+            vec3 t1 = (boxMin - origin) * invDir;
+            vec3 t2 = (boxMax - origin) * invDir;
+            vec3 tMin = min(t1, t2);
+            vec3 tMax = max(t1, t2);
+            float tNear = max(max(tMin.x, tMin.y), tMin.z);
+            float tFar = min(min(tMax.x, tMax.y), tMax.z);
+            if(tNear > tFar || tFar < 0.0) return false;
+            if(tNear > 0.0) return true;
+            return false;
+        }
+        bool isInsideBox(vec3 p) {
+            return (abs(p.x) < 0.499 && p.y > 0.001 && p.y < 0.999 && abs(p.z) < 0.499);
+        }
+
+        void main() {
+            vec3 currentWorldPos = vec3(vWorldPosition.x, uMeasurementHeight, vWorldPosition.z);
+            
+            bool potentiallyInShadow = false;
+            for(int k=0; k<MAX_BUILDINGS; k++){
+                if(!uIsVisible[k]) continue;
+                if (currentWorldPos.z > uBuildingPos[k].z + 10.0) continue;
+                float dist = distance(currentWorldPos.xz, uBuildingPos[k].xz);
+                if (dist < uCutoffRadius) { potentiallyInShadow = true; break; }
+            }
+            if (!potentiallyInShadow) { gl_FragColor = vec4(0.0); return; }
+
+            for(int k=0; k<MAX_BUILDINGS; k++){
+                if(!uIsVisible[k]) continue;
+                vec3 localPos = (uInvMatrices[k] * vec4(currentWorldPos, 1.0)).xyz;
+                if(isInsideBox(localPos)) { discard; return; }
+            }
+
+            float shadowCount = 0.0;
+            for(int i=0; i < MAX_STEPS; i++) {
+                if(i > uCurrentIndex) break; 
+                vec3 sunDir = uSunVectors[i];
+                if(sunDir.y <= 0.0) continue;
+                for(int k=0; k<MAX_BUILDINGS; k++) {
+                    if(!uIsVisible[k]) continue;
+                    vec3 rayOrigin = (uInvMatrices[k] * vec4(currentWorldPos, 1.0)).xyz;
+                    vec3 rayDir = mat3(uInvMatrices[k]) * sunDir; 
+                    if(intersectBox(rayOrigin, normalize(rayDir))) {
+                        shadowCount += 1.0;
+                        break;
+                    }
+                }
+            }
+            float totalShadowMinutes = shadowCount * uStepMin;
+
+            if (totalShadowMinutes < uIsoThreshold) {
+                gl_FragColor = vec4(0.0);
+            } else {
+                float dist = sdPolygon(currentWorldPos.xz, uSitePoly);
+                bool violation5m  = (dist > 4.95)  && (totalShadowMinutes > 299.9);
+                bool violation10m = (dist > 9.95) && (totalShadowMinutes > 179.9);
+                bool isViolation = violation5m || violation10m;
+
+                vec4 c1, c2, c3, c4, c5;
+
+                if (isViolation) {
+                    c1 = vec4(0.5, 0.7, 1.0, 0.40); 
+                    c2 = vec4(0.3, 0.5, 1.0, 0.55); 
+                    c3 = vec4(0.1, 0.1, 1.0, 0.70); 
+                    c4 = vec4(0.0, 0.0, 0.8, 0.85); 
+                    c5 = vec4(0.0, 0.0, 0.4, 0.95); 
+                } else {
+                    c1 = vec4(1.0, 0.9, 0.9, 0.40); 
+                    c2 = vec4(1.0, 0.55, 0.40, 0.55); 
+                    c3 = vec4(1.0, 0.10, 0.10, 0.70); 
+                    c4 = vec4(0.6, 0.00, 0.00, 0.85); 
+                    c5 = vec4(0.2, 0.00, 0.00, 0.95); 
+                }
+
+                if (uColorMode == 1) {
+                    float sTime = floor(totalShadowMinutes / 10.0) * 10.0;
+                    if (sTime < 120.0) { float t = (sTime - 60.0) / 60.0; gl_FragColor = mix(c1, c2, t); } 
+                    else if (sTime < 180.0) { float t = (sTime - 120.0) / 60.0; gl_FragColor = mix(c2, c3, t); } 
+                    else if (sTime < 240.0) { float t = (sTime - 180.0) / 60.0; gl_FragColor = mix(c3, c4, t); } 
+                    else { float t = clamp((sTime - 240.0) / 60.0, 0.0, 1.0); gl_FragColor = mix(c4, c5, t); }
+                } else {
+                    if (totalShadowMinutes < 120.0) gl_FragColor = vec4(c1.rgb, 0.25);
+                    else if (totalShadowMinutes < 180.0) gl_FragColor = vec4(c2.rgb, 0.45); 
+                    else if (totalShadowMinutes < 240.0) gl_FragColor = vec4(c3.rgb, 0.65); 
+                    else if (totalShadowMinutes < 300.0) gl_FragColor = vec4(c4.rgb, 0.85); 
+                    else gl_FragColor = vec4(c5.rgb, 0.95); 
+                }
+            }
+        }
+    </script>
+
+    <script id="wallVertexShader" type="x-shader/x-vertex">
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        void main() {
+            // normalMatrixはViewSpace用なので、modelMatrixを使ってWorldSpaceの法線を取得
+            vNormal = normalize(mat3(modelMatrix) * normal);
+            
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPos.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+    </script>
+    
+    <script id="wallFragmentShader" type="x-shader/x-fragment">
+        #define MAX_STEPS 250
+        uniform vec3 uSunVectors[MAX_STEPS];
+        uniform int uCurrentIndex;
+        uniform mat4 uBlockerInvMatrix; // 遮蔽建物の逆行列
+        uniform float uStepMin;
+        
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+
+        bool intersectBox(vec3 origin, vec3 dir) {
+            vec3 boxMin = vec3(-0.5, 0.0, -0.5); 
+            vec3 boxMax = vec3( 0.5, 1.0,  0.5);
+            vec3 invDir = 1.0 / dir;
+            vec3 t1 = (boxMin - origin) * invDir;
+            vec3 t2 = (boxMax - origin) * invDir;
+            vec3 tMin = min(t1, t2);
+            vec3 tMax = max(t1, t2);
+            float tNear = max(max(tMin.x, tMin.y), tMin.z);
+            float tFar = min(min(tMax.x, tMax.y), tMax.z);
+            if(tNear > tFar || tFar < 0.0) return false;
+            if(tNear > 0.0) return true;
+            return false;
+        }
+
+        void main() {
+            // 4m未満は白くする (日影規制の測定面基準)
+            if (vWorldPosition.y < 4.0) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+                return;
+            }
+
+            // 屋根（法線が上向き）は白くする
+            if (vNormal.y > 0.9) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); 
+                return;
+            }
+
+            float shadowCount = 0.0;
+            
+            // 自己交差（シャドウアクネ）防止のため少し浮かす
+            vec3 biasOrigin = vWorldPosition + vNormal * 0.02;
+
+            for(int i=0; i < MAX_STEPS; i++) {
+                if(i > uCurrentIndex) break; 
+                vec3 sunDir = uSunVectors[i];
+                if(sunDir.y <= 0.0) continue;
+
+                // 面が太陽を向いているか？
+                float dotSun = dot(vNormal, sunDir);
+                
+                // 自己日影(dotSun <= 0)はカウントしない（他者日影のみ計算）
+                if (dotSun > 0.0) {
+                    // 太陽を向いている場合のみ、遮蔽物をチェック
+                    vec3 rayOrigin = (uBlockerInvMatrix * vec4(biasOrigin, 1.0)).xyz;
+                    vec3 rayDir = mat3(uBlockerInvMatrix) * sunDir; 
+                    
+                    if(intersectBox(rayOrigin, normalize(rayDir))) {
+                        shadowCount += 1.0;
+                    }
+                }
+            }
+
+            float totalMinutes = shadowCount * uStepMin;
+
+if (totalMinutes < 1.0) {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // 影なし
+            } else {
+                // ★ 紫色（パープル）系統のグラデーションに変更
+                // 元の赤色の明度・彩度感を模倣しています
+                
+                // 1h-2h: 薄いラベンダー (Very Light Purple)
+                vec4 c1 = vec4(0.95, 0.90, 1.00, 1.0); 
+                
+                // 2h-3h: 明るい紫 (Light Violet)
+                vec4 c2 = vec4(0.80, 0.55, 1.00, 1.0); 
+                
+                // 3h-4h: 鮮やかな紫 (Vivid Purple)
+                vec4 c3 = vec4(0.65, 0.10, 0.95, 1.0); 
+                
+                // 4h-5h: 暗い紫 (Dark Purple)
+                vec4 c4 = vec4(0.40, 0.00, 0.60, 1.0); 
+                
+                // 5h以上: 非常に暗い紫 (Deep Indigo)
+                vec4 c5 = vec4(0.15, 0.00, 0.30, 1.0); 
+
+                if (totalMinutes < 120.0) gl_FragColor = c1;
+                else if (totalMinutes < 180.0) gl_FragColor = c2; 
+                else if (totalMinutes < 240.0) gl_FragColor = c3; 
+                else if (totalMinutes < 300.0) gl_FragColor = c4; 
+                else gl_FragColor = c5; 
+            }
+        }
+    </script>
+
+    <script id="displayVertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    </script>
+    <script id="displayFragmentShader" type="x-shader/x-fragment">
+        uniform sampler2D uMap; uniform vec2 uResolution; varying vec2 vUv;
+        #define FXAA_REDUCE_MIN (1.0/128.0)
+        #define FXAA_REDUCE_MUL (1.0/8.0)
+        #define FXAA_SPAN_MAX 8.0
+        void main() {
+            vec2 inverseVP = 1.0 / uResolution.xy;
+            vec2 v_rgbNW = (vUv + vec2(-1.0, -1.0) * inverseVP);
+            vec2 v_rgbNE = (vUv + vec2(1.0, -1.0) * inverseVP);
+            vec2 v_rgbSW = (vUv + vec2(-1.0, 1.0) * inverseVP);
+            vec2 v_rgbSE = (vUv + vec2(1.0, 1.0) * inverseVP);
+            vec2 v_rgbM  = vUv;
+            vec3 rgbNW = texture2D(uMap, v_rgbNW).xyz; vec3 rgbNE = texture2D(uMap, v_rgbNE).xyz;
+            vec3 rgbSW = texture2D(uMap, v_rgbSW).xyz; vec3 rgbSE = texture2D(uMap, v_rgbSE).xyz;
+            vec4 texColor = texture2D(uMap, v_rgbM); vec3 rgbM  = texColor.xyz; float opacity = texColor.a; 
+            vec3 luma = vec3(0.299, 0.587, 0.114);
+            float lumaNW = dot(rgbNW, luma); float lumaNE = dot(rgbNE, luma);
+            float lumaSW = dot(rgbSW, luma); float lumaSE = dot(rgbSE, luma); float lumaM  = dot(rgbM,  luma);
+            float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+            float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+            vec2 dir;
+            dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+            dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+            float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+            float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+            dir = min(vec2(FXAA_SPAN_MAX, FXAA_SPAN_MAX), max(vec2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX), dir * rcpDirMin)) * inverseVP;
+            vec3 rgbA = 0.5 * (texture2D(uMap, vUv + dir * (1.0 / 3.0 - 0.5)).xyz + texture2D(uMap, vUv + dir * (2.0 / 3.0 - 0.5)).xyz);
+            vec3 rgbB = rgbA * 0.5 + 0.25 * (texture2D(uMap, vUv + dir * -0.5).xyz + texture2D(uMap, vUv + dir * 0.5).xyz);
+            float lumaB = dot(rgbB, luma);
+            vec3 finalColor;
+            if ((lumaB < lumaMin) || (lumaB > lumaMax)) { finalColor = rgbA; } else { finalColor = rgbB; }
+            gl_FragColor = vec4(finalColor, opacity);
+        }
+    </script>
+
+    <script>
+        const LATITUDE = 35.0167; 
+        const LONGITUDE = 135.7333;
+        const DATE_WINTER_SOLSTICE = new Date('2024-12-22T12:00:00');
+        const MEASUREMENT_HEIGHT = 4; 
+        const STEP_MIN = 2; 
+        const START_HOUR = 8.0;
+        const END_HOUR = 16.0;
+        const MAX_STEPS = 250; 
+        const GROUND_SIZE = 200;
+        const SITE_CLICK_THRESHOLD = 5.0; 
+
+        const buildings = [];
+        let activeCamera, perspectiveCamera, orthoCamera;
+        let isWallMode = false;
+
+        let selectedObject = null;
+        let selectedVertexIndex = -1;
+        let isDragging = false;
+        
+        const dragPlane = new THREE.Plane();
+        const dragRaycaster = new THREE.Raycaster();
+        const tooltipRaycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        const dragOffset = new THREE.Vector3(); 
+        const startPosition = new THREE.Vector3(); 
+        const dragIntersectPoint = new THREE.Vector3();
+
+        let measurementFlag = null;
+
+        const initialSiteSize = 100;
+        const initialHalf = initialSiteSize / 2;
+        let siteVertices = [
+            new THREE.Vector3(-initialHalf, 0,  initialHalf),
+            new THREE.Vector3( initialHalf, 0,  initialHalf),
+            new THREE.Vector3( initialHalf, 0, -initialHalf),
+            new THREE.Vector3(-initialHalf, 0, -initialHalf) 
+        ];
+
+        function getSunVector(userHours) {
+            const times = SunCalc.getTimes(DATE_WINTER_SOLSTICE, LATITUDE, LONGITUDE);
+            const solarNoon = times.solarNoon; 
+            const offsetHours = userHours - 12.0;
+            const targetDate = new Date(solarNoon.getTime() + offsetHours * 60 * 60 * 1000);
+            const sunPos = SunCalc.getPosition(targetDate, LATITUDE, LONGITUDE);
+            const r = Math.cos(sunPos.altitude);
+            const x = r * -Math.sin(sunPos.azimuth); 
+            const y = Math.sin(sunPos.altitude);
+            const z = r * Math.cos(sunPos.azimuth);
+            return new THREE.Vector3(x, y, z).normalize();
+        }
+
+        const sunVectors = [];
+        for(let i = 0; i < MAX_STEPS; i++) {
+            const currentMin = i * STEP_MIN;
+            const hour = START_HOUR + currentMin / 60.0;
+            if(hour > END_HOUR) { sunVectors.push(new THREE.Vector3(0,-1,0)); continue; }
+            sunVectors.push(getSunVector(hour));
+        }
+
+        const uniforms = {
+            uSunVectors: { value: sunVectors },
+            uCurrentIndex: { value: 0 },
+            uIsoThreshold: { value: 120.0 }, 
+            uInvMatrices: { value: [new THREE.Matrix4(), new THREE.Matrix4()] },
+            uIsVisible: { value: [true, true] },
+            uStepMin: { value: STEP_MIN },
+            uSize: { value: GROUND_SIZE },
+            uBuildingPos: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+            uCutoffRadius: { value: 100.0 },
+            uColorMode: { value: 0 },
+            uMeasurementHeight: { value: MEASUREMENT_HEIGHT },
+            uSitePoly: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
+            uIs2D: { value: false } 
+        };
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xb0c4de);
+        
+        perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+        perspectiveCamera.position.set(0, 80, 80); 
+        perspectiveCamera.lookAt(0, 0, 0);
+
+        const d = 100;
+        orthoCamera = new THREE.OrthographicCamera(-d, d, d, -d, 1, 1000);
+        orthoCamera.position.set(0, 200, 0);
+        orthoCamera.lookAt(0, 0, 0);
+        activeCamera = perspectiveCamera;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('center-container').appendChild(renderer.domElement);
+        
+        const rtSize = 1024; 
+        const renderTarget = new THREE.WebGLRenderTarget(rtSize, rtSize, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+        const offScreenScene = new THREE.Scene();
+        const offScreenCamera = new THREE.OrthographicCamera(-GROUND_SIZE/2, GROUND_SIZE/2, GROUND_SIZE/2, -GROUND_SIZE/2, 0.1, 10);
+        offScreenCamera.position.z = 1;
+        const calcPlaneGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
+        const calcMaterial = new THREE.ShaderMaterial({ vertexShader: document.getElementById('calcVertexShader').textContent, fragmentShader: document.getElementById('calcFragmentShader').textContent, uniforms: uniforms, transparent: true });
+        const calcMesh = new THREE.Mesh(calcPlaneGeo, calcMaterial);
+        offScreenScene.add(calcMesh);
+
+        const displayUniforms = { uMap: { value: renderTarget.texture }, uResolution: { value: new THREE.Vector2(rtSize, rtSize) } };
+        const displayMaterial = new THREE.ShaderMaterial({ vertexShader: document.getElementById('displayVertexShader').textContent, fragmentShader: document.getElementById('displayFragmentShader').textContent, uniforms: displayUniforms, transparent: true, side: THREE.DoubleSide });
+        const displayGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE);
+        displayGeo.rotateX(-Math.PI / 2);
+        displayGeo.translate(0, MEASUREMENT_HEIGHT + 0.01, 0); 
+        const displayMesh = new THREE.Mesh(displayGeo, displayMaterial);
+        scene.add(displayMesh);
+
+        const visualGround = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshLambertMaterial({ color: 0xeeeeee }));
+        visualGround.rotation.x = -Math.PI / 2;
+        visualGround.receiveShadow = true;
+        scene.add(visualGround);
+
+        const siteGroup = new THREE.Group();
+        siteGroup.position.y = MEASUREMENT_HEIGHT + 0.05; 
+        scene.add(siteGroup);
+
+        let siteLine, siteMesh;
+        const siteDotMeshes = [];
+
+        const regLineGroup = new THREE.Group();
+        regLineGroup.position.y = MEASUREMENT_HEIGHT + 0.05; 
+        scene.add(regLineGroup);
+
+        const groundHelperGroup = new THREE.Group();
+        groundHelperGroup.position.y = 0.02; 
+        scene.add(groundHelperGroup);
+
+        // ★ 立面日影用マテリアル
+        const wallShadowUniforms = {
+            uSunVectors: { value: sunVectors },
+            uCurrentIndex: { value: 0 },
+            uStepMin: { value: STEP_MIN },
+            uBlockerInvMatrix: { value: new THREE.Matrix4() }
+        };
+        const wallShadowMaterial = new THREE.ShaderMaterial({
+            vertexShader: document.getElementById('wallVertexShader').textContent,
+            fragmentShader: document.getElementById('wallFragmentShader').textContent,
+            uniforms: wallShadowUniforms,
+            transparent: false,
+            side: THREE.DoubleSide
+        });
+        const normalMaterial = new THREE.MeshPhongMaterial({ color: 0x0066ff, opacity: 0.5, transparent: true, side: THREE.DoubleSide });
+
+
+        function createFlag() {
+            const group = new THREE.Group();
+            const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 3, 8); 
+            poleGeo.translate(0, 1.5, 0); 
+            const poleMat = new THREE.MeshBasicMaterial({ color: 0x000000 }); 
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            group.add(pole);
+            const headGeo = new THREE.SphereGeometry(1.2, 16, 16); 
+            headGeo.translate(0, 3, 0); 
+            const headMat = new THREE.MeshBasicMaterial({ color: 0xFFA500 }); 
+            const head = new THREE.Mesh(headGeo, headMat);
+            group.add(head);
+            group.position.set(0, MEASUREMENT_HEIGHT, 0);
+            scene.add(group);
+            measurementFlag = group;
+        }
+        createFlag();
+
+        function updateSiteGeometry() {
+            if(siteLine) siteGroup.remove(siteLine);
+            const siteGeo = new THREE.BufferGeometry().setFromPoints(siteVertices);
+            siteLine = new THREE.LineLoop(siteGeo, new THREE.LineBasicMaterial({ color: 0x000000 }));
+            siteGroup.add(siteLine);
+
+            siteDotMeshes.forEach(dot => siteGroup.remove(dot));
+            siteDotMeshes.length = 0;
+            const dotGeo = new THREE.CircleGeometry(1.2, 16); 
+            dotGeo.rotateX(-Math.PI/2);
+            const dotMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            siteVertices.forEach(v => {
+                const dot = new THREE.Mesh(dotGeo, dotMat);
+                dot.position.copy(v);
+                dot.position.y = 0.01; 
+                siteGroup.add(dot);
+                siteDotMeshes.push(dot);
+            });
+
+            if(siteMesh) siteGroup.remove(siteMesh);
+            const shape = new THREE.Shape();
+            shape.moveTo(siteVertices[0].x, siteVertices[0].z);
+            for(let i=1; i<siteVertices.length; i++){
+                shape.lineTo(siteVertices[i].x, siteVertices[i].z);
+            }
+            shape.closePath();
+            const polyGeo = new THREE.ShapeGeometry(shape);
+            polyGeo.rotateX(Math.PI/2);
+            const polyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.0, transparent: true, side: THREE.DoubleSide });
+            siteMesh = new THREE.Mesh(polyGeo, polyMat);
+            siteGroup.add(siteMesh);
+
+            updateRegulationLines();
+
+            // GL=0 ヘルパー
+            while(groundHelperGroup.children.length) groundHelperGroup.remove(groundHelperGroup.children[0]);
+            siteVertices.forEach(v => {
+                const dot = new THREE.Mesh(
+                    new THREE.CircleGeometry(1.2, 16).rotateX(-Math.PI/2),
+                    new THREE.MeshBasicMaterial({ color: 0x808080 }) 
+                );
+                dot.position.set(v.x, 0.02, v.z);
+                groundHelperGroup.add(dot);
+            });
+            const groundPoints = siteVertices.map(v => new THREE.Vector3(v.x, 0, v.z));
+            groundPoints.push(groundPoints[0]); 
+            const groundGeo = new THREE.BufferGeometry().setFromPoints(groundPoints);
+            const groundMat = new THREE.LineDashedMaterial({ color: 0x888888, dashSize: 1, gapSize: 1 });
+            const groundLine = new THREE.Line(groundGeo, groundMat);
+            groundLine.computeLineDistances(); 
+            groundHelperGroup.add(groundLine);
+        }
+
+        function updateRegulationLines() {
+            while(regLineGroup.children.length) regLineGroup.remove(regLineGroup.children[0]);
+            function getOutwardNormal(v1, v2) {
+                const dx = v2.x - v1.x; const dz = v2.z - v1.z; const len = Math.sqrt(dx*dx + dz*dz);
+                return new THREE.Vector3(-dz/len, 0, dx/len);
+            }
+            function createOffsetPath(distance, color) {
+                const points = [];
+                const len = siteVertices.length; const segments = 12;
+                for(let i = 0; i < len; i++) {
+                    const curr = siteVertices[i]; const prev = siteVertices[(i - 1 + len) % len]; const next = siteVertices[(i + 1) % len];
+                    const nPrev = getOutwardNormal(prev, curr); const nNext = getOutwardNormal(curr, next);
+                    const pIn = curr.clone().add(nPrev.clone().multiplyScalar(distance));
+                    const startAng = Math.atan2(nPrev.z, nPrev.x); const endAng = Math.atan2(nNext.z, nNext.x);
+                    let delta = endAng - startAng;
+                    if (delta > 0) delta -= 2 * Math.PI; if (delta < -Math.PI) delta += 2 * Math.PI;
+                    for(let j=0; j<=segments; j++) { 
+                        const t = j / segments; const ang = startAng + delta * t;
+                        const px = curr.x + Math.cos(ang) * distance; const pz = curr.z + Math.sin(ang) * distance;
+                        points.push(new THREE.Vector3(px, 0, pz));
+                    }
+                }
+                const geo = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: color }));
+                regLineGroup.add(line);
+            }
+            createOffsetPath(5, 0x0000ff);
+            createOffsetPath(10, 0xff0000);
+        }
+        updateSiteGeometry();
+
+        const ambientLight = new THREE.AmbientLight(0x606060); 
+        scene.add(ambientLight);
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.left = -60; sunLight.shadow.camera.right = 60;
+        sunLight.shadow.camera.top = 60; sunLight.shadow.camera.bottom = -60;
+        scene.add(sunLight);
+        const auxLight = new THREE.DirectionalLight(0xffffff, 0.0);
+        auxLight.castShadow = false; scene.add(auxLight);
+        const sunSphere = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+        scene.add(sunSphere);
+        const hourlyShadowsGroup = new THREE.Group();
+        hourlyShadowsGroup.position.y = MEASUREMENT_HEIGHT + 0.02; scene.add(hourlyShadowsGroup);
+        const currentShadowGroup = new THREE.Group();
+        currentShadowGroup.position.y = MEASUREMENT_HEIGHT + 0.03; scene.add(currentShadowGroup);
+
+        function getShadowHull(sunVec, buildingObj) {
+            if (sunVec.y <= 0) return null; if (!buildingObj.visible) return null;
+            const mesh = buildingObj.mesh;
+            const localVerts = [
+                new THREE.Vector3(0.5, 1, 0.5), new THREE.Vector3(-0.5, 1, 0.5),
+                new THREE.Vector3(-0.5, 1, -0.5), new THREE.Vector3(0.5, 1, -0.5),
+                new THREE.Vector3(0.5, 0, 0.5), new THREE.Vector3(-0.5, 0, 0.5),
+                new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 0, -0.5)
+            ];
+            mesh.updateMatrixWorld();
+            const worldVerts = localVerts.map(v => v.clone().applyMatrix4(mesh.matrixWorld));
+            const mh = MEASUREMENT_HEIGHT;
+            const projectedPoints = [];
+            const topVerts = worldVerts.slice(0,4); const botVerts = worldVerts.slice(4,8);
+            for(let i=0; i<4; i++) {
+                const tv = topVerts[i]; const bv = botVerts[i];
+                if(tv.y >= mh && bv.y <= mh) {
+                     const ratio = (mh - bv.y) / (tv.y - bv.y);
+                     const x = bv.x + (tv.x - bv.x) * ratio; const z = bv.z + (tv.z - bv.z) * ratio;
+                     projectedPoints.push([x, z]);
+                } else if (bv.y > mh) { projectedPoints.push([bv.x, bv.z]); }
+                if(tv.y > mh) {
+                    const t = (tv.y - mh) / sunVec.y;
+                    projectedPoints.push([tv.x - t * sunVec.x, tv.z - t * sunVec.z]);
+                }
+            }
+            if (projectedPoints.length < 3) return null;
+            return d3.polygonHull(projectedPoints);
+        }
+
+        function drawLines(targetGroup, sunVec, color, opacity=1.0) {
+            const polygons = [];
+            buildings.forEach(b => {
+                const hull = getShadowHull(sunVec, b);
+                if(hull) polygons.push([hull]); 
+            });
+            if(polygons.length === 0) return;
+            try {
+                const union = polygonClipping.union(...polygons);
+                union.forEach(multiPoly => { 
+                     multiPoly.forEach(ring => {
+                        const pts = ring.map(p => new THREE.Vector3(p[0], 0, p[1]));
+                        if(pts.length > 0) pts.push(pts[0]); 
+                        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+                        const mat = new THREE.LineBasicMaterial({ color: color, opacity: opacity, transparent: (opacity<1) });
+                        const line = new THREE.Line(geo, mat);
+                        targetGroup.add(line);
+                     });
+                });
+            } catch(e) { console.warn(e); }
+        }
+
+        function updateCPU_Lines() {
+            while(hourlyShadowsGroup.children.length) hourlyShadowsGroup.remove(hourlyShadowsGroup.children[0]);
+            while(currentShadowGroup.children.length) currentShadowGroup.remove(currentShadowGroup.children[0]);
+            if (document.getElementById('toggleHourly').checked) {
+                for (let h = 8; h <= 16; h++) {
+                    const vec = getSunVector(h);
+                    drawLines(hourlyShadowsGroup, vec, 0x666666, 0.4); 
+                }
+            }
+            const tVal = parseFloat(document.getElementById('timeSlider').value);
+            const nowVec = getSunVector(tVal);
+            drawLines(currentShadowGroup, nowVec, 0x000000, 1.0);
+        }
+
+        function updateAll() {
+            let maxH = 0;
+            const positions = [];
+            buildings.forEach((b, idx) => {
+                b.mesh.scale.set(b.params.w, b.params.h, b.params.d);
+                b.mesh.rotation.y = b.params.r * (Math.PI / 180);
+                b.mesh.visible = b.visible;
+                b.mesh.updateMatrixWorld(); 
+                const inv = b.mesh.matrixWorld.clone().invert();
+                uniforms.uInvMatrices.value[idx] = inv;
+                uniforms.uIsVisible.value[idx] = b.visible;
+                positions.push(b.mesh.position);
+                if(b.visible && b.params.h > maxH) maxH = b.params.h;
+            });
+            uniforms.uBuildingPos.value = positions;
+            uniforms.uCutoffRadius.value = Math.max(50.0, maxH * 3.5); 
+
+            const tVal = parseFloat(document.getElementById('timeSlider').value);
+            let h = Math.floor(tVal); let m = Math.round((tVal % 1) * 60);
+            if(m === 60) { h++; m=0; }
+            document.getElementById('timeDisplay').innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+
+            const sunVec = getSunVector(tVal);
+            sunLight.position.copy(sunVec).multiplyScalar(50);
+            sunSphere.position.copy(sunVec).multiplyScalar(45);
+
+            if (activeCamera === orthoCamera) {
+                sunLight.intensity = 0.0; 
+                const noonVec = getSunVector(12.0);
+                auxLight.position.copy(noonVec).multiplyScalar(50);
+                auxLight.intensity = 1.5; 
+            } else {
+                auxLight.intensity = 0.0;
+                sunLight.intensity = 1.0;
+            }
+
+            const minutesFromStart = (tVal - START_HOUR) * 60;
+            const index = Math.floor(minutesFromStart / STEP_MIN);
+            uniforms.uCurrentIndex.value = Math.max(0, index);
+
+            const isoHours = parseFloat(document.getElementById('isoSlider').value);
+            document.getElementById('isoDisplay').innerText = isoHours.toFixed(1) + " 時間";
+            uniforms.uIsoThreshold.value = isoHours * 60.0; 
+            const poly = siteVertices.map(v => new THREE.Vector2(v.x, v.z));
+            uniforms.uSitePoly.value = poly;
+            uniforms.uIs2D.value = (activeCamera === orthoCamera);
+
+            const isStepped = document.getElementById('toggleStepped').checked;
+            uniforms.uColorMode.value = isStepped ? 1 : 0;
+            document.getElementById('labelHourly').classList.toggle('active', !isStepped);
+            document.getElementById('labelStepped').classList.toggle('active', isStepped);
+
+            renderer.setRenderTarget(renderTarget);
+            renderer.render(offScreenScene, offScreenCamera);
+            renderer.setRenderTarget(null);
+
+            updateCPU_Lines();
+            updateMeasurementInfo();
+            
+            // ★ 立面日影モード処理 ★
+            if (isWallMode && buildings.length >= 2 && buildings[0].visible && buildings[1].visible) {
+                // 北側判定
+                const z1 = buildings[0].mesh.position.z;
+                const z2 = buildings[1].mesh.position.z;
+                let targetIdx = 0; 
+                if (z2 < z1) targetIdx = 1; 
+
+                const blockerIdx = (targetIdx === 0) ? 1 : 0;
+                
+                buildings[targetIdx].mesh.material = wallShadowMaterial;
+                buildings[blockerIdx].mesh.material = normalMaterial;
+
+                // Uniform更新
+                wallShadowUniforms.uCurrentIndex.value = Math.max(0, index);
+                const blockerInv = buildings[blockerIdx].mesh.matrixWorld.clone().invert();
+                wallShadowUniforms.uBlockerInvMatrix.value = blockerInv;
+
+            } else {
+                buildings.forEach(b => b.mesh.material = normalMaterial);
+            }
+
+            renderer.render(scene, activeCamera);
+        }
+
+        function createBuilding(id, initialPos) {
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            geometry.translate(0, 0.5, 0); 
+            const mesh = new THREE.Mesh(geometry, normalMaterial); // 初期マテリアル
+            mesh.position.copy(initialPos);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x000000 }));
+            mesh.add(edges);
+            scene.add(mesh);
+            buildings.push({ id: id, mesh: mesh, params: { w: 10, d: 15, h: 20, r: 0 }, visible: true });
+        }
+        createBuilding(1, new THREE.Vector3(-15, 0, 0));
+        createBuilding(2, new THREE.Vector3(15, 0, 0));
+
+        const controls = new THREE.OrbitControls(perspectiveCamera, renderer.domElement);
+        controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+        controls.addEventListener('change', () => renderer.render(scene, activeCamera));
+
+        function distToSegmentSquared(p, v, w) {
+            const l2 = v.distanceToSquared(w);
+            if (l2 === 0) return p.distanceToSquared(v);
+            let t = ((p.x - v.x) * (w.x - v.x) + (p.z - v.z) * (w.z - v.z)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            const x = v.x + t * (w.x - v.x);
+            const z = v.z + t * (w.z - v.z);
+            const dx = p.x - x; const dz = p.z - z;
+            return dx * dx + dz * dz;
+        }
+
+        function isNearSiteBorder(point, threshold) {
+            let minDistSq = Infinity;
+            const len = siteVertices.length;
+            for(let i=0; i<len; i++){
+                const p1 = siteVertices[i]; const p2 = siteVertices[(i+1)%len];
+                const d2 = distToSegmentSquared(point, p1, p2);
+                if(d2 < minDistSq) minDistSq = d2;
+            }
+            return minDistSq < (threshold * threshold);
+        }
+
+        const raycaster = new THREE.Raycaster();
+        renderer.domElement.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, activeCamera);
+
+            if (measurementFlag) {
+                const flagIntersects = raycaster.intersectObjects(measurementFlag.children);
+                if (flagIntersects.length > 0) {
+                    isDragging = true; selectedObject = measurementFlag; selectedVertexIndex = -3; 
+                    controls.enabled = false;
+                    dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), flagIntersects[0].point);
+                    return;
+                }
+            }
+
+            const dotIntersects = raycaster.intersectObjects(siteDotMeshes);
+            if (dotIntersects.length > 0) {
+                isDragging = true; selectedObject = null; 
+                selectedVertexIndex = siteDotMeshes.indexOf(dotIntersects[0].object);
+                controls.enabled = false;
+                dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), dotIntersects[0].point);
+                return;
+            }
+
+            const buildingMeshes = buildings.map(b => b.mesh).filter(m => m.visible);
+            const buildIntersects = raycaster.intersectObjects(buildingMeshes);
+            if (buildIntersects.length > 0) {
+                // ★修正: 4m未満の場合は建物のドラッグを開始しない
+                if (buildIntersects[0].point.y >= 4.0) {
+                    isDragging = true; selectedObject = buildIntersects[0].object; selectedVertexIndex = -1;
+                    controls.enabled = false; 
+                    document.getElementById('center-container').classList.add('dragging');
+                    dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), buildIntersects[0].point);
+                    dragOffset.subVectors(selectedObject.position, buildIntersects[0].point);
+                    startPosition.copy(selectedObject.position);
+                    return;
+                }
+            }
+
+            const siteIntersects = raycaster.intersectObject(siteMesh);
+            if (siteIntersects.length > 0) {
+                if (isNearSiteBorder(siteIntersects[0].point, SITE_CLICK_THRESHOLD)) {
+                    isDragging = true; selectedObject = siteGroup; selectedVertexIndex = -2; 
+                    controls.enabled = false;
+                    document.getElementById('center-container').classList.add('dragging');
+                    dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), siteIntersects[0].point);
+                    startPosition.copy(siteIntersects[0].point); 
+                    return;
+                }
+            }
+        });
+
+        renderer.domElement.addEventListener('pointermove', (event) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, activeCamera);
+
+            if (!isDragging) {
+                const tooltip = document.getElementById('tooltip');
+                let hit = false;
+                
+                // ★ 立面日影モードのツールチップ ★
+                if (isWallMode) {
+                    const buildingMeshes = buildings.map(b => b.mesh).filter(m => m.visible);
+                    const intersects = raycaster.intersectObjects(buildingMeshes);
+                    if (intersects.length > 0) {
+                        const hitObj = intersects[0].object;
+                        const pt = intersects[0].point;
+                        // ★修正: Y座標が4.0m以上の場合のみ壁面日影として判定
+                        if (hitObj.material === wallShadowMaterial && pt.y >= 4.0) {
+                             const faceNormal = intersects[0].face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hitObj.matrixWorld)).normalize();
+                             
+                             if (faceNormal.y < 0.9) { 
+                                 const blocker = buildings.find(b => b.mesh !== hitObj && b.visible);
+                                 if (blocker) {
+                                     const currentIndex = uniforms.uCurrentIndex.value;
+                                     const res = calculateWallShadowCPU(pt, faceNormal, blocker, currentIndex);
+                                     
+                                     function fmt(min) {
+                                         const h = Math.floor(min / 60); const m = Math.round(min % 60);
+                                         return `${h}h ${m.toString().padStart(2, '0')}m`;
+                                     }
+                                     tooltip.innerHTML = `現在時刻までの積算<br>他者日影: ${fmt(res.cast)}<br>自己日影: ${fmt(res.self)}<br>合計: ${fmt(res.total)}`;
+                                     tooltip.style.display = 'block';
+                                     hit = true;
+                                 }
+                             }
+                        }
+                    }
+                }
+
+                if (!hit) {
+                    if (measurementFlag && raycaster.intersectObjects(measurementFlag.children).length > 0) {
+                        document.body.style.cursor = 'move';
+                        tooltip.innerText = "測定点を移動"; tooltip.style.display = 'block'; hit = true;
+                    }
+                    else if (raycaster.intersectObjects(siteDotMeshes).length > 0) {
+                        document.body.style.cursor = 'pointer';
+                        tooltip.innerText = "敷地頂点を移動"; tooltip.style.display = 'block'; hit = true;
+                    } 
+                    else {
+                        // ★修正: 建物を移動判定を条件付きにする (4m以上)
+                        const buildingMeshes = buildings.map(b => b.mesh).filter(m => m.visible);
+                        const bIntersects = raycaster.intersectObjects(buildingMeshes);
+                        
+                        if (bIntersects.length > 0 && bIntersects[0].point.y >= 4.0) {
+                            document.body.style.cursor = 'move';
+                            tooltip.innerText = "建物を移動"; tooltip.style.display = 'block'; hit = true;
+                        }
+                        else {
+                            const siteHits = raycaster.intersectObject(siteMesh);
+                            if (siteHits.length > 0 && isNearSiteBorder(siteHits[0].point, SITE_CLICK_THRESHOLD)) {
+                                document.body.style.cursor = 'move';
+                                tooltip.innerText = "敷地全体を移動"; tooltip.style.display = 'block'; hit = true;
+                            } 
+                            else {
+                                document.body.style.cursor = 'default';
+                                const intersects = raycaster.intersectObject(displayMesh);
+                                if (intersects.length > 0) {
+                                    const pt = intersects[0].point;
+                                    const shadowMins = calculateShadowAt(pt);
+                                    if (shadowMins > 0) {
+                                        const h = Math.floor(shadowMins / 60); const m = Math.round(shadowMins % 60);
+                                        tooltip.innerText = `${h}時間 ${m}分 日影`;
+                                        tooltip.style.display = 'block';
+                                        hit = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if(!hit) tooltip.style.display = 'none';
+            }
+
+            if (isDragging) {
+                if (raycaster.ray.intersectPlane(dragPlane, dragIntersectPoint)) {
+                    if (selectedVertexIndex >= 0) {
+                        const newPos = dragIntersectPoint.clone(); newPos.y = 0; 
+                        const len = siteVertices.length;
+                        const currIdx = selectedVertexIndex;
+                        const prevIdx = (currIdx - 1 + len) % len; const nextIdx = (currIdx + 1) % len;
+                        const p = siteVertices[prevIdx]; const n = siteVertices[nextIdx]; 
+                        const lineVec = new THREE.Vector3().subVectors(n, p);
+                        const lineDir = lineVec.clone().normalize();
+                        const pointVec = new THREE.Vector3().subVectors(newPos, p);
+                        const crossY = lineDir.z * pointVec.x - lineDir.x * pointVec.z;
+                        if (crossY > 0) {
+                            const projection = lineDir.multiplyScalar(pointVec.dot(lineDir));
+                            newPos.copy(p).add(projection);
+                        }
+                        siteVertices[currIdx].copy(newPos);
+                        updateSiteGeometry();
+                        updateAll();
+                    }
+                    else if (selectedVertexIndex === -2) {
+                        const moveVec = new THREE.Vector3().subVectors(dragIntersectPoint, startPosition);
+                        siteVertices.forEach(v => { v.add(moveVec); });
+                        startPosition.copy(dragIntersectPoint); 
+                        updateSiteGeometry();
+                        updateAll();
+                    }
+                    else if (selectedVertexIndex === -3) {
+                        const newPos = dragIntersectPoint.clone();
+                        newPos.y = MEASUREMENT_HEIGHT;
+                        measurementFlag.position.copy(newPos);
+                        updateAll();
+                    }
+                    else if (selectedObject) {
+                        const targetPos = dragIntersectPoint.clone().add(dragOffset);
+                        if (event.shiftKey) {
+                            const dx = Math.abs(targetPos.x - startPosition.x);
+                            const dz = Math.abs(targetPos.z - startPosition.z);
+                            if (dx > dz) targetPos.z = startPosition.z;
+                            else targetPos.x = startPosition.x;
+                        }
+                        selectedObject.position.copy(targetPos);
+                        updateAll();
+                    }
+                }
+            }
+        });
+
+        renderer.domElement.addEventListener('pointerup', () => {
+            if (isDragging) {
+                isDragging = false;
+                selectedObject = null;
+                selectedVertexIndex = -1;
+                controls.enabled = true;
+                document.getElementById('center-container').classList.remove('dragging');
+            }
+        });
+
+        function calculateShadowAt(targetPoint) {
+            const validBuildings = buildings.filter(b => b.visible);
+            if (validBuildings.length === 0) return 0;
+            let shadowCount = 0;
+            const tempPt = targetPoint.clone(); 
+            for(let b of validBuildings) {
+                const localPt = tempPt.clone().applyMatrix4(b.mesh.matrixWorld.clone().invert());
+                if (Math.abs(localPt.x) < 0.499 && localPt.y > 0.001 && localPt.y < 0.999 && Math.abs(localPt.z) < 0.499) return 0; 
+            }
+            const MAX_STEP_INDEX = Math.floor(((parseFloat(document.getElementById('timeSlider').value) - START_HOUR) * 60) / STEP_MIN);
+            for (let i = 0; i < MAX_STEPS; i++) {
+                if(i > MAX_STEP_INDEX) break;
+                const sunDir = sunVectors[i];
+                if(sunDir.y <= 0) continue;
+                for(let b of validBuildings) {
+                    const invMat = b.mesh.matrixWorld.clone().invert();
+                    const rayOrigin = tempPt.clone().applyMatrix4(invMat);
+                    const v4 = new THREE.Vector4(sunDir.x, sunDir.y, sunDir.z, 0);
+                    v4.applyMatrix4(invMat);
+                    const rayDir = new THREE.Vector3(v4.x, v4.y, v4.z).normalize();
+                    if (intersectBoxCPU(rayOrigin, rayDir)) { shadowCount++; break; }
+                }
+            }
+            return shadowCount * STEP_MIN;
+        }
+
+        // ★★★ 壁面日影 計算用 (CPU) ★★★
+        function calculateWallShadowCPU(origin, normal, blocker, limitIndex) {
+            let cast = 0;
+            let self = 0;
+            const biasOrigin = origin.clone().add(normal.clone().multiplyScalar(0.02));
+
+            for (let i = 0; i < MAX_STEPS; i++) {
+                if(i > limitIndex) break; 
+
+                const sunDir = sunVectors[i];
+                if(sunDir.y <= 0) continue;
+
+                if (normal.dot(sunDir) <= 0) {
+                    self++; // 自己日影もカウント(ツールチップ用)
+                } else {
+                    const invMat = blocker.mesh.matrixWorld.clone().invert();
+                    const rayOrigin = biasOrigin.clone().applyMatrix4(invMat);
+                    const v4 = new THREE.Vector4(sunDir.x, sunDir.y, sunDir.z, 0);
+                    v4.applyMatrix4(invMat);
+                    const rayDir = new THREE.Vector3(v4.x, v4.y, v4.z).normalize();
+                    if (intersectBoxCPU(rayOrigin, rayDir)) {
+                        cast++;
+                    }
+                }
+            }
+            return {
+                cast: cast * STEP_MIN,
+                self: self * STEP_MIN,
+                total: (cast + self) * STEP_MIN
+            };
+        }
+
+        function calculateCumulativeShadow(targetPoint, currentTimeLimit) {
+            const validBuildings = buildings.filter(b => b.visible);
+            if (validBuildings.length === 0) return { b1:0, b2:0, both:0, total:0 };
+            let countB1Only = 0; let countB2Only = 0; let countBoth = 0; let countTotal = 0;
+            const tempPt = targetPoint.clone(); 
+            const maxIdx = Math.floor(((currentTimeLimit - START_HOUR) * 60) / STEP_MIN);
+            for (let i = 0; i <= maxIdx; i++) {
+                if(i >= MAX_STEPS) break;
+                const sunDir = sunVectors[i];
+                if(sunDir.y <= 0) continue;
+                let hitB1 = false; let hitB2 = false;
+                if (buildings[0] && buildings[0].visible) {
+                    const invMat = buildings[0].mesh.matrixWorld.clone().invert();
+                    const rayOrigin = tempPt.clone().applyMatrix4(invMat);
+                    const v4 = new THREE.Vector4(sunDir.x, sunDir.y, sunDir.z, 0);
+                    v4.applyMatrix4(invMat);
+                    const rayDir = new THREE.Vector3(v4.x, v4.y, v4.z).normalize();
+                    if (intersectBoxCPU(rayOrigin, rayDir)) hitB1 = true;
+                }
+                if (buildings[1] && buildings[1].visible) {
+                    const invMat = buildings[1].mesh.matrixWorld.clone().invert();
+                    const rayOrigin = tempPt.clone().applyMatrix4(invMat);
+                    const v4 = new THREE.Vector4(sunDir.x, sunDir.y, sunDir.z, 0);
+                    v4.applyMatrix4(invMat);
+                    const rayDir = new THREE.Vector3(v4.x, v4.y, v4.z).normalize();
+                    if (intersectBoxCPU(rayOrigin, rayDir)) hitB2 = true;
+                }
+                if (hitB1 && !hitB2) countB1Only++;
+                if (!hitB1 && hitB2) countB2Only++;
+                if (hitB1 && hitB2) countBoth++;
+                if (hitB1 || hitB2) countTotal++;
+            }
+            return {
+                b1: countB1Only * STEP_MIN, b2: countB2Only * STEP_MIN,
+                both: countBoth * STEP_MIN, total: countTotal * STEP_MIN
+            };
+        }
+
+        function updateMeasurementInfo() {
+            if (!measurementFlag) return;
+            const tVal = parseFloat(document.getElementById('timeSlider').value);
+            const res = calculateCumulativeShadow(measurementFlag.position, tVal);
+            function fmt(min) {
+                const h = Math.floor(min / 60); const m = Math.round(min % 60);
+                return `${h}h ${m.toString().padStart(2, '0')}m`;
+            }
+            document.getElementById('measB1Only').innerText = fmt(res.b1);
+            document.getElementById('measB2Only').innerText = fmt(res.b2);
+            document.getElementById('measBoth').innerText = fmt(res.both);
+            document.getElementById('measTotal').innerText = fmt(res.total);
+        }
+
+        function intersectBoxCPU(origin, dir) {
+            const boxMin = {x: -0.5, y: 0.0, z: -0.5};
+            const boxMax = {x:  0.5, y: 1.0, z:  0.5};
+            let tMin = -Infinity; let tMax = Infinity;
+            if (dir.x !== 0.0) {
+                const tx1 = (boxMin.x - origin.x) / dir.x; const tx2 = (boxMax.x - origin.x) / dir.x;
+                tMin = Math.max(tMin, Math.min(tx1, tx2)); tMax = Math.min(tMax, Math.max(tx1, tx2));
+            } else if (origin.x < boxMin.x || origin.x > boxMax.x) return false;
+            if (dir.y !== 0.0) {
+                const ty1 = (boxMin.y - origin.y) / dir.y; const ty2 = (boxMax.y - origin.y) / dir.y;
+                tMin = Math.max(tMin, Math.min(ty1, ty2)); tMax = Math.min(tMax, Math.max(ty1, ty2));
+            } else if (origin.y < boxMin.y || origin.y > boxMax.y) return false;
+            if (dir.z !== 0.0) {
+                const tz1 = (boxMin.z - origin.z) / dir.z; const tz2 = (boxMax.z - origin.z) / dir.z;
+                tMin = Math.max(tMin, Math.min(tz1, tz2)); tMax = Math.min(tMax, Math.max(tz1, tz2));
+            } else if (origin.z < boxMin.z || origin.z > boxMax.z) return false;
+            if (tMax < 0 || tMin > tMax) return false;
+            return tMax > 0;
+        }
+
+        [1, 2].forEach(id => {
+            const bIndex = id - 1;
+            const b = buildings[bIndex];
+            ['W', 'D', 'H', 'R'].forEach(type => {
+                const el = document.getElementById(`slider${type}${id}`);
+                el.addEventListener('input', (e) => {
+                    b.params[type.toLowerCase()] = parseFloat(e.target.value);
+                    document.getElementById(`disp${type}${id}`).innerText = e.target.value + (type === 'R' ? " °" : " m");
+                    updateAll();
+                });
+            });
+            document.getElementById(`toggleB${id}`).addEventListener('change', (e) => { b.visible = e.target.checked; updateAll(); });
+        });
+
+        document.getElementById('timeSlider').addEventListener('input', updateAll);
+        document.getElementById('isoSlider').addEventListener('input', updateAll);
+        document.getElementById('labelHourly').addEventListener('click', () => { document.getElementById('toggleStepped').checked = false; updateAll(); });
+        document.getElementById('labelStepped').addEventListener('click', () => { document.getElementById('toggleStepped').checked = true; updateAll(); });
+        document.getElementById('toggleStepped').addEventListener('change', updateAll);
+        
+        document.getElementById('toggle2D').addEventListener('change', (e) => {
+            const is2D = e.target.checked;
+            document.getElementById('label3D').classList.toggle('active', !is2D);
+            document.getElementById('label2D').classList.toggle('active', is2D);
+            document.getElementById('toggleRealShadow').checked = !is2D; 
+            sunLight.castShadow = !is2D;
+
+            if (is2D) {
+                activeCamera = orthoCamera;
+                orthoCamera.position.set(0, 200, 0); orthoCamera.lookAt(0, 0, 0); orthoCamera.zoom = 1; orthoCamera.updateProjectionMatrix();
+                controls.object = orthoCamera; controls.target.set(0, 0, 0);
+                controls.enableRotate = false; controls.screenSpacePanning = true; 
+                controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+                controls.update();
+            } else {
+                activeCamera = perspectiveCamera; controls.object = perspectiveCamera;
+                controls.enableRotate = true; controls.screenSpacePanning = false; 
+                controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+            }
+            updateAll();
+        });
+        document.getElementById('label3D').addEventListener('click', () => { document.getElementById('toggle2D').click(); });
+        document.getElementById('label2D').addEventListener('click', () => { document.getElementById('toggle2D').click(); });
+        document.getElementById('toggleHourly').addEventListener('change', updateAll); 
+        document.getElementById('toggleRealShadow').addEventListener('change', (e) => { sunLight.castShadow = e.target.checked; updateAll(); });
+        
+        document.getElementById('toggleWallShadow').addEventListener('change', (e) => {
+            isWallMode = e.target.checked;
+            updateAll();
+        });
+
+        function onWindowResize() {
+            const container = document.getElementById('center-container');
+            const width = container.clientWidth; const height = container.clientHeight; const aspect = width / height;
+            perspectiveCamera.aspect = aspect; perspectiveCamera.updateProjectionMatrix();
+            const d = 120; orthoCamera.left = -d * aspect; orthoCamera.right = d * aspect; orthoCamera.top = d; orthoCamera.bottom = -d; orthoCamera.updateProjectionMatrix();
+            renderer.setSize(width, height); updateAll();
+        }
+        window.addEventListener('resize', onWindowResize);
+        onWindowResize();
+    </script>
+</body>
+</html>
