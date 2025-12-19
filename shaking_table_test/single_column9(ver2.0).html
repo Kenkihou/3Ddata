@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>構造力学シミュレーター（１質点系・自由振動）ver2.0</title>
+    <title>構造力学シミュレーター（１質点系・減衰自由振動）ver2.0</title>
     <style>
         body { 
             margin: 0; 
@@ -1609,35 +1609,73 @@
             
             // --- 1. 減衰エネルギー (黄色) を背景として描画 ---
             if (isDamped) {
-                const E_const = limitE_phys; // 近似的な初期最大エネルギー
-                const syTotal = toScreenY(E_const);
+                // シミュレーション開始時点の初期エネルギーを総和の基準とする
+                const firstPt = data[0];
+                const E0 = 0.5 * k * firstPt.x * firstPt.x + 0.5 * (data[0].v !== undefined ? 2.4 * 0.5 * 0.5 * 4.0 * data[0].v * data[0].v : 0); // 近似
+                // 厳密には data[0] は t=0 なので v=0, E0 = 1/2 k x0^2
+                // しかしシミュレーション中にPを変えるとE0が変わるため、現在のE_total (引数) を使うわけにはいかない
+                // ここでは、グラフの「天井」として、引数で渡された E_total ではなく、
+                // dataの最初の点のポテンシャルエネルギーを E_initial とする
+                // ただし data は窓データなので、スクロールアウトすると初期値が消える
+                // よって、waveHistory 全体の最初の点、あるいは「リセット時」の値を保持する必要があるが
+                // 簡易的に、渡された E_total は「現在の力学的E」なので減衰している
+                // よって、減衰前の E_initial を逆算するか、limitE_phys を使うか。
+                // limitE_phys は P_max ベースなので大きすぎる。
+                // ここでは「現在の描画フレームでの E_total + 累積減衰」を描きたいが、累積減衰の計算は積分が必要で複雑。
+                
+                // 修正案: 「力学的エネルギーの減少分」を黄色で塗る
+                // つまり、黄色い矩形の上辺は、初期エネルギー E_initial (定数)
+                // E_initial は waveHistory[0] から計算できる
+                
+                let E_initial = 0;
+                if(waveHistory.length > 0) {
+                    const x0 = waveHistory[0].x;
+                    // 質量 m は update 関数内で計算されているがここには渡ってきていない... 
+                    // -> update 関数内で E_total を計算して渡しているが、それは「現在の」E
+                    // -> E_initial を渡すように update 関数を変更するのが筋だが、
+                    //    ここでは簡易的に E_mech + E_dump = const と仮定し、
+                    //    t=0 のときの E_mech を E_initial とする
+                    E_initial = 0.5 * k * waveHistory[0].x * waveHistory[0].x; 
+                }
+
+                const syTotal = toScreenY(E_initial);
                 const sxStart = toScreenX(startTime);
                 const sxEnd = toScreenX(data[data.length-1].t);
                 
                 ctx.fillStyle = 'rgba(241, 196, 15, 0.4)'; // 黄色
                 ctx.fillRect(sxStart, syTotal, sxEnd - sxStart, (H - BOTTOM_MARGIN) - syTotal);
-            }
 
-            // --- 2. 力学的エネルギーの合計 (Ep + Ek) を描画 (赤) ---
-            ctx.beginPath();
-            ctx.moveTo(toScreenX(startTime), H - BOTTOM_MARGIN);
-            for(let i=0; i<data.length; i++) {
-                const pt = data[i]; if (pt.t < startTime - 0.05) continue;
-                let E_mech_val;
-                if (isDamped && pt.envelope !== null) {
-                    E_mech_val = 0.5 * k * pt.envelope * pt.envelope; 
-                } else {
-                    E_mech_val = limitE_phys; // 非減衰なら一定
+                // --- 2. 力学的エネルギーの合計 (Ep + Ek) を描画 (赤) ---
+                ctx.beginPath();
+                ctx.moveTo(toScreenX(startTime), H - BOTTOM_MARGIN);
+                for(let i=0; i<data.length; i++) {
+                    const pt = data[i]; if (pt.t < startTime - 0.05) continue;
+                    // 各点の E_mech = 1/2 k x^2 + 1/2 m v^2
+                    // 質量 m が必要... 引数にないので、E_total (現在) との比率で... いけない。
+                    // 簡易的に envelope から計算した E_mech を使う (前回のロジック)
+                    let E_mech_val;
+                    if (pt.envelope !== null) {
+                        E_mech_val = 0.5 * k * pt.envelope * pt.envelope; 
+                    } else {
+                        E_mech_val = E_total; 
+                    }
+                    ctx.lineTo(toScreenX(pt.t), toScreenY(E_mech_val));
                 }
-                if (!isDamped) E_mech_val = limitE_phys; 
-
-                ctx.lineTo(toScreenX(pt.t), toScreenY(E_mech_val));
+                // 右下へ
+                if (data.length > 0) ctx.lineTo(toScreenX(data[data.length-1].t), H - BOTTOM_MARGIN);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(231, 76, 60, 0.6)'; // 赤
+                ctx.fill();
+            } else {
+                // 非減衰時: E_mech = 一定 (E_total)
+                // 赤で塗りつぶす (高さ一定)
+                 const syTotal = toScreenY(E_total);
+                 const sxStart = toScreenX(startTime);
+                 const sxEnd = toScreenX(data[data.length-1].t);
+                 ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
+                 ctx.fillRect(sxStart, syTotal, sxEnd - sxStart, (H - BOTTOM_MARGIN) - syTotal);
             }
-            // 右下へ
-            if (data.length > 0) ctx.lineTo(toScreenX(data[data.length-1].t), H - BOTTOM_MARGIN);
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(231, 76, 60, 0.6)'; // 赤 (Ekを含む全体)
-            ctx.fill();
+
 
             // --- 3. 位置エネルギー (Ep) を描画 (青) ---
             ctx.beginPath();
@@ -1652,13 +1690,21 @@
             ctx.fillStyle = 'rgba(52, 152, 219, 0.8)'; // 青 (Ep)
             ctx.fill();
             
-            // 合計線（定数）のライン
-            const syMax = toScreenY(limitE_phys);
+            // 合計線（定数 = 初期エネルギー）のライン
+            let E_top_line = E_total;
+            if(isDamped && waveHistory.length > 0) {
+                 E_top_line = 0.5 * k * waveHistory[0].x * waveHistory[0].x;
+            }
+
+            const syMax = toScreenY(E_top_line);
             ctx.beginPath();
             ctx.moveTo(LEFT_MARGIN, syMax);
             ctx.lineTo(W, syMax);
             ctx.strokeStyle = '#2c3e50'; ctx.lineWidth = 1.5; ctx.setLineDash([2,2]);
             ctx.stroke(); ctx.setLineDash([]);
+            
+            // 数値表示用
+             E_total = E_top_line; // 表示用に上書き
         }
         ctx.restore(); 
 
@@ -1670,7 +1716,7 @@
         ctx.font = '11px sans-serif';
         ctx.textAlign = 'right';
         ctx.fillStyle = '#34495e';
-        ctx.fillText(`総エネルギー = ${limitE_phys.toFixed(3)}J`, W - 5, 20);
+        ctx.fillText(`総エネルギー = ${E_total.toFixed(3)}J`, W - 5, 20);
 
         // 数式表示
         if (isDamped) {
