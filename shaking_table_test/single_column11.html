@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>構造力学シミュレーター（1質点系・強制振動）ver3.2</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: #f0f0f0; 
+        }
+        
+        #container { 
+            display: flex; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+
+        #canvas-wrapper { 
+            flex-grow: 1; 
+            position: relative; 
+            background: #ffffff; 
+            overflow: hidden; 
+            cursor: default; 
+        }
+
+        /* --- ラベル・注釈 --- */
+        .dim-label, .handle-label, .l-label, .force-label {
+            position: absolute;
+            pointer-events: none;
+            white-space: nowrap;
+            z-index: 20;
+            opacity: 0; 
+            transition: opacity 0.2s ease-out;
+        }
+        .dim-label, .l-label-val, .force-label {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
+            font-size: 15px;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            text-align: left;
+        }
+        .dim-label { border: 2px solid #2980b9; color: #2980b9; }
+        .e-label { border-color: #27ae60; color: #27ae60; }
+        .l-label-val { border: 2px solid #e67e22; color: #d35400; }
+
+        /* 右上のコントロール群 */
+        .top-right-controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+        
+        .control-row span { 
+            margin-right: 10px; 
+            font-weight: bold; 
+            font-size: 13px;
+            color: #2c3e50;
+            width: 100px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .control-row input[type=range] { 
+            width: 100px; 
+            cursor: pointer; 
+            vertical-align: middle;
+        }
+        .control-row input[type=range]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .handle-label {
+            background: #34495e;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            z-index: 15;
+        }
+        .handle-label-right { transform: translate(10px, -50%); }
+        .handle-label-right::after { content: ''; position: absolute; left: -5px; top: 50%; transform: translateY(-50%); border-width: 5px 5px 5px 0; border-style: solid; border-color: transparent #34495e transparent transparent; }
+        .handle-label-left { transform: translate(-100%, -50%); margin-left: -10px; }
+        .handle-label-left::after { content: ''; position: absolute; right: -5px; top: 50%; transform: translateY(-50%); border-width: 5px 0 5px 5px; border-style: solid; border-color: transparent transparent transparent #34495e; }
+
+
+        /* --- UIパネル --- */
+        .side-panel {
+            width: 340px;
+            flex-shrink: 0;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            z-index: 10;
+            user-select: none;
+        }
+
+        #left-panel { box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
+        #ui-panel { box-shadow: -2px 0 5px rgba(0,0,0,0.1); }
+
+        h2 { font-size: 16px; font-weight: bold; border-bottom: 1px solid #7f8c8d; padding-bottom: 10px; margin: 0 0 10px; letter-spacing: 0.05em; }
+
+        .mode-select-container {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+            border: 1px solid #465f75;
+        }
+        .mode-select-label { font-size: 12px; color: #bdc3c7; display: block; margin-bottom: 4px; font-weight: bold;}
+        #mode-selector {
+            width: 100%;
+            padding: 6px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #7f8c8d;
+            background: #ecf0f1;
+            color: #2c3e50;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .prerequisites {
+            font-size: 11px;
+            color: #bdc3c7;
+            margin-bottom: 12px;
+            padding-bottom: 5px;
+            border-bottom: 1px dashed #546e7a;
+            line-height: 1.4;
+        }
+
+        .calc-block {
+            background: rgba(52, 73, 94, 0.6);
+            border: 1px solid #465f75;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .block-header { 
+            font-size: 14px; 
+            font-weight: bold;
+            color: #bdc3c7; 
+            margin-bottom: 4px; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .flex-row { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
+        .math-area { flex-grow: 1; display: flex; align-items: center; justify-content: flex-start; font-size: 14px; color: #ecf0f1; margin-right: 10px; }
+        .fraction { display: inline-flex; flex-direction: column; align-items: center; margin: 0 4px; vertical-align: middle; font-size: 0.9em; }
+        .numerator { border-bottom: 1px solid #ecf0f1; padding-bottom: 1px; margin-bottom: 1px; text-align: center; }
+        .denominator { padding-top: 1px; text-align: center; }
+        .result-area { text-align: right; font-weight: bold; font-size: 16px; white-space: nowrap; letter-spacing: 0.05em; }
+        
+        .val-green { color: #2ecc71; }
+        .val-red { color: #e74c3c; }
+        .val-orange { color: #f39c12; }
+        .val-blue { color: #3498db; }
+        .unit { font-size: 0.7em; color: #95a5a6; margin-left: 2px; font-weight: normal;}
+
+        /* トグルスイッチ */
+        .toggle-wrapper { 
+            display: flex; align-items: center; font-size: 11px; color: #bdc3c7; 
+            transition: opacity 0.3s;
+        }
+        .toggle-wrapper span { margin-right: 6px; }
+        .switch { position: relative; display: inline-block; width: 32px; height: 16px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-switch { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #95a5a6; transition: .4s; border-radius: 16px; }
+        .slider-switch:before { position: absolute; content: ""; height: 12px; width: 12px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider-switch { background-color: #2ecc71; }
+        input:checked + .slider-switch:before { transform: translateX(16px); }
+
+        /* 振動制御ボタン群 */
+        .control-btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .control-btn {
+            flex: 1;
+            padding: 10px 0;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.2);
+        }
+        .control-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,0.2); }
+
+        #btn-play-pause {
+            background-color: #27ae60;
+            box-shadow: 0 4px 0 #219150;
+        }
+        #btn-play-pause.running {
+            background-color: #f39c12;
+            box-shadow: 0 4px 0 #d35400;
+        }
+        #btn-play-pause.running:active { box-shadow: 0 2px 0 #d35400; }
+
+        #btn-stop {
+            background-color: #7f8c8d;
+            box-shadow: 0 4px 0 #5f6a6b;
+        }
+        #btn-stop:hover { background-color: #c0392b; box-shadow: 0 4px 0 #962d22;}
+        #btn-stop:active { box-shadow: 0 2px 0 #962d22; }
+
+
+        /* 支配率バー */
+        .dominance-container { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #7f8c8d; }
+        .ratio-bar { height: 10px; width: 100%; background: #2c3e50; border-radius: 3px; display: flex; overflow: hidden; margin-bottom: 4px; }
+        .ratio-bend { height: 100%; background-color: #e74c3c; }
+        .ratio-shear { height: 100%; background-color: #f1c40f; }
+        .ratio-text-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: bold; }
+        .text-bend { color: #e74c3c; } .text-shear { color: #f1c40f; }
+
+        /* --- グラフ・凡例レイアウト --- */
+        .graph-container {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #465f75;
+        }
+        .graph-title {
+            font-size: 15px;
+            font-weight: bold;
+            color: #bdc3c7;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        .graph-row {
+            display: flex;
+            align-items: center; 
+            justify-content: space-between;
+        }
+        
+        canvas.graph-canvas {
+            display: block;
+            background: #ffffff;
+            border-radius: 4px;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+            cursor: default;
+        }
+        
+        canvas.scrubbable {
+            cursor: ew-resize !important;
+        }
+
+        #schematic-canvas {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 30;
+            pointer-events: none;
+        }
+
+        .legend-col {
+            flex-shrink: 0;
+            width: 90px;
+            padding-left: 5px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: #ecf0f1;
+            line-height: 1.2;
+        }
+        
+        .legend-mark {
+            width: 12px;
+            height: 12px;
+            margin-right: 6px;
+            flex-shrink: 0;
+        }
+        
+        .mark-circle { border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); }
+        .bg-blue { background-color: #3498db; }
+        .bg-green { background-color: #27ae60; }
+        .bg-red { background-color: #e74c3c; }
+        
+        .mark-square { border-radius: 2px; }
+        .bg-blue-area { background-color: rgba(52, 152, 219, 0.6); border: 1px solid #3498db; }
+        .bg-red-area { background-color: rgba(231, 76, 60, 0.6); border: 1px solid #e74c3c; }
+        .bg-yellow-area { background-color: rgba(241, 196, 15, 0.6); border: 1px solid #f39c12; }
+
+        .sub-text { font-size: 11px; color: #95a5a6; display: block; margin-top: 1px;}
+        .line-mark { width: 14px; height: 2px; background-color: #e67e22; margin-right: 6px; }
+        .graph-note { font-size: 11px; color: #95a5a6; text-align: center; margin-top: 4px; }
+        .legend-note { font-size: 11px; color: #95a5a6; margin-top: 8px; }
+
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+
+<div id="container">
+    
+    <div id="left-panel" class="side-panel">
+        <h2>物理量モニタリング</h2>
+        
+        <div class="graph-container">
+            <div class="graph-title">F-x 線図 (履歴軌跡)</div>
+            <div class="graph-row">
+                <canvas id="force-graph-canvas" class="graph-canvas" width="220" height="220"></canvas>
+                
+                <div class="legend-col">
+                    <div class="legend-item">
+                        <span class="legend-mark mark-circle bg-blue"></span>
+                        <div id="legend-blue-label">
+                            復元力＋減衰力<span class="sub-text">F_int</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="graph-note">
+                ※グラフ範囲：自動オートスケール
+            </div>
+        </div>
+
+        <div class="graph-container">
+            <div class="graph-title">変位-時間 (t-x)</div>
+            <div class="graph-row">
+                <canvas id="time-graph-canvas" class="graph-canvas" width="220" height="160"></canvas>
+                
+                <div class="legend-col">
+                    <div class="legend-item">
+                        <span class="line-mark"></span>
+                        <div>変位<span class="sub-text">Disp. x</span></div>
+                    </div>
+                    <div class="legend-note">
+                        横軸：時間 t<br>
+                        縦軸：変位 x<br>
+                        (0.5秒間を表示)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="graph-container" style="border-bottom:none;">
+            <div class="graph-title">エネルギー推移 (t-E)</div>
+            <div class="graph-row">
+                <canvas id="energy-graph-canvas" class="graph-canvas" width="220" height="160"></canvas>
+                
+                <div class="legend-col">
+                    <div class="legend-item">
+                        <span class="legend-mark mark-square bg-red-area"></span>
+                        <div>運動E<span class="sub-text">Kinetic</span></div>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-mark mark-square bg-blue-area"></span>
+                        <div>位置E<span class="sub-text">Potential</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="canvas-wrapper">
+        <canvas id="schematic-canvas" width="160" height="110"></canvas>
+        
+        <div class="top-right-controls">
+            <div class="control-panel" id="damping-control-panel">
+                <div class="control-row">
+                    <span id="damping-slider-label">減衰 h: 0.05</span>
+                    <input type="range" id="damping-slider" min="0.00" max="0.3" step="0.01" value="0.05">
+                </div>
+                <div class="control-row" id="beta-control-row">
+                    <span id="beta-slider-label">振動数比 β: 1.00</span>
+                    <input type="range" id="beta-slider" min="0" max="200" step="1" value="100">
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <div class="control-row">
+                    <span id="exag-label">変形誇張: 100x</span>
+                    <input type="range" id="exag-slider" min="1" max="1000" step="1" value="100">
+                </div>
+                <div class="control-row">
+                    <span id="speed-label">再生速度: 0.1x</span>
+                    <input type="range" id="speed-slider" min="0.1" max="2.0" step="0.1" value="0.1">
+                </div>
+            </div>
+        </div>
+
+        <div id="label-a" class="dim-label">a</div>
+        <div id="label-b" class="dim-label">b</div>
+        <div id="label-E" class="dim-label e-label">E</div>
+        <div id="label-L" class="l-label l-label-val">L</div>
+        
+        <div id="label-handle" class="handle-label handle-label-right">断面寸法変更ハンドル</div>
+        <div id="label-handle-e" class="handle-label handle-label-left">ヤング係数変更ハンドル</div>
+        <div id="label-handle-l" class="handle-label handle-label-left">長さ変更ハンドル</div>
+        
+        <div id="label-force-ext" class="force-label force-label-ext" style="opacity:0;">P₀sin(ωt)</div>
+
+    </div>
+
+    <div id="ui-panel" class="side-panel">
+        
+        <div class="mode-select-container">
+            <span class="mode-select-label">シミュレーションモード</span>
+            <select id="mode-selector">
+                <option value="undamped">1. 1質点系・非減衰自由振動</option>
+                <option value="forced" selected>2. 1質点系・減衰強制振動 (調和外力)</option>
+            </select>
+        </div>
+
+        <div class="prerequisites">
+            前提条件：ポアソン比 ν=0.2, 形状係数 κ=1.2<br>
+            コンクリート密度 ρ=2.4 t/m³<br>
+            <span id="damping-note" style="color:#f1c40f;">外力 P(t) = P₀sin(ωt), ω = β·ωn</span>
+        </div>
+
+        <div class="control-btn-group">
+            <button id="btn-play-pause" class="control-btn">振動開始 (Start)</button>
+            <button id="btn-stop" class="control-btn">停止 (Reset)</button>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>断面二次モーメント (I)</span>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>I = </span>
+                    <div class="fraction">
+                        <span class="numerator">b · a<sup>3</sup></span>
+                        <span class="denominator">12</span>
+                    </div>
+                </div>
+                <div class="result-area val-green">
+                    <span id="res-val-I">0.000</span><span class="unit">m⁴</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>固有周期 (Tn)</span>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>Tn = 2π</span>
+                    <span style="font-size:1.2em; margin:0 2px;">√</span>
+                    <div class="fraction">
+                        <span class="numerator">m</span>
+                        <span class="denominator">k</span>
+                    </div>
+                </div>
+                <div class="result-area val-orange">
+                    <span id="res-val-T">0.000</span><span class="unit">sec</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>曲げ変形量 (δ<sub>b</sub>)</span>
+                <div class="toggle-wrapper">
+                    <span>曲げ変形考慮</span>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-bending" checked>
+                        <span class="slider-switch"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>δ<sub>b</sub> (静的)</span>
+                </div>
+                <div class="result-area val-red">
+                    <span id="res-val-db">0.000</span><span class="unit">m</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>せん断変形量 (δ<sub>s</sub>)</span>
+                <div class="toggle-wrapper">
+                    <span>せん断変形考慮</span>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-shear" checked>
+                        <span class="slider-switch"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>δ<sub>s</sub> (静的)</span>
+                </div>
+                <div class="result-area val-red">
+                    <span id="res-val-ds">0.000</span><span class="unit">m</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>合計変形量 (δ<sub>total</sub>)</span>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>δ = δ<sub>b</sub> + δ<sub>s</sub></span>
+                </div>
+                <div class="result-area val-red" style="font-size:22px;">
+                    <span id="res-val-total">0.000</span><span class="unit">m</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="calc-block">
+            <div class="block-header">
+                <span>合計変形角 (θ)</span>
+            </div>
+            <div class="flex-row">
+                <div class="math-area">
+                    <span>θ (層間変形角)</span>
+                </div>
+                <div class="result-area val-blue" style="font-size:15px;">
+                    <span id="res-val-theta">0.0000 rad</span>
+                </div>
+            </div>
+            
+            <div class="dominance-container">
+                <div class="dominance-title">変形支配率 (Dominance Ratio)</div>
+                <div class="ratio-bar">
+                    <div id="bar-bend" class="ratio-bend" style="width: 50%;"></div>
+                    <div id="bar-shear" class="ratio-shear" style="width: 50%;"></div>
+                </div>
+                <div class="ratio-text-row">
+                    <span class="text-bend" id="text-bend-pct">曲げ: 50%</span>
+                    <span class="text-shear" id="text-shear-pct">せん断: 50%</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+
+    // --- 初期化 ---
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    let width = canvasWrapper.clientWidth;
+    let height = canvasWrapper.clientHeight;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xffffff);
+
+    const frustumSize = 20; 
+    let aspect = width / height;
+    const camera = new THREE.OrthographicCamera(
+        frustumSize * aspect / -2, frustumSize * aspect / 2,
+        frustumSize / 2, frustumSize / -2,
+        1, 1000
+    );
+    camera.position.set(0, -100, 6); 
+    camera.lookAt(0, 0, 3);          
+    camera.up.set(0, 0, 1);          
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    canvasWrapper.appendChild(renderer.domElement);
+
+    let visualExaggeration = 100.0;
+    
+    const SEGMENTS = 60; 
+    const SECTION_Z_POS = -3.0;
+    const NU = 0.2; 
+    const KAPPA = 1.2; 
+    const RHO_CONC = 2.4; 
+
+    // --- 3Dオブジェクト構築 ---
+    const groundGroup = new THREE.Group();
+    groundGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-8,0,0), new THREE.Vector3(8,0,0)]), new THREE.LineBasicMaterial({color:0x000000, linewidth:2})));
+    const hatchPoints = []; for(let x=-8; x<=8; x+=0.5) hatchPoints.push(x,0,0, x-0.4,0,-0.6);
+    groundGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(hatchPoints,3)), new THREE.LineBasicMaterial({color:0x000000})));
+    scene.add(groundGroup);
+
+    const colGeo = new THREE.BufferGeometry();
+    const colPos = new Float32Array((SEGMENTS+1)*2*3);
+    const colIndices = []; for(let i=0;i<SEGMENTS;i++) colIndices.push(i*2, i*2+1, (i+1)*2, i*2+1, (i+1)*2+1, (i+1)*2);
+    colGeo.setAttribute('position', new THREE.BufferAttribute(colPos, 3)); colGeo.setIndex(colIndices);
+    const columnMesh = new THREE.Mesh(colGeo, new THREE.MeshBasicMaterial({ color: 0x95a5a6, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }));
+    scene.add(columnMesh);
+    const columnWire = new THREE.LineSegments(new THREE.EdgesGeometry(colGeo), new THREE.LineBasicMaterial({ color: 0x7f8c8d, linewidth: 2 }));
+    columnMesh.add(columnWire);
+    const redLines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9*2*3), 3)), new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 }));
+    scene.add(redLines);
+
+    const sectionGroup = new THREE.Group();
+    sectionGroup.position.set(0, 0, SECTION_Z_POS);
+    sectionGroup.rotation.x = -Math.PI / 2;
+    scene.add(sectionGroup);
+    const rectGeo = new THREE.PlaneGeometry(1, 1);
+    const sectionRect = new THREE.Mesh(rectGeo, new THREE.MeshBasicMaterial({ color: 0x95a5a6, side: THREE.DoubleSide, transparent: true, opacity: 0.3 }));
+    sectionGroup.add(sectionRect);
+    sectionRect.add(new THREE.LineSegments(new THREE.EdgesGeometry(rectGeo), new THREE.LineBasicMaterial({ color: 0x7f8c8d }))); 
+    const hatchLineGeo = new THREE.BufferGeometry();
+    hatchLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(1200), 3));
+    const sectionHatch = new THREE.LineSegments(hatchLineGeo, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
+    sectionGroup.add(sectionHatch); 
+
+    // ★参照円（Reference Circle）の構築 - サイズを縮小
+    const refCircleRadius = 0.8; // 1.2 -> 0.8
+    const refCircleGroup = new THREE.Group();
+    scene.add(refCircleGroup);
+
+    // 円（リング）
+    const circleCurve = new THREE.EllipseCurve(0, 0, refCircleRadius, refCircleRadius, 0, 2 * Math.PI, false, 0);
+    const circlePoints = circleCurve.getPoints(60);
+    const circleGeo = new THREE.BufferGeometry().setFromPoints(circlePoints.map(p => new THREE.Vector3(p.x, 0, p.y)));
+    const circleMat = new THREE.LineBasicMaterial({ color: 0x27ae60, transparent: true, opacity: 0.6 });
+    const refCircleLine = new THREE.Line(circleGeo, circleMat);
+    refCircleGroup.add(refCircleLine);
+
+    // 回転棒（中心から円周へ）
+    const rodGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(refCircleRadius,0,0)]);
+    const rodLine = new THREE.Line(rodGeo, new THREE.LineBasicMaterial({ color: 0x27ae60, linewidth: 2 }));
+    refCircleGroup.add(rodLine);
+
+    // 投影線（点線）
+    const projGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-2)]); 
+    const projLine = new THREE.Line(projGeo, new THREE.LineDashedMaterial({ color: 0x27ae60, dashSize: 0.15, gapSize: 0.1, opacity:0.6, transparent:true }));
+    projLine.computeLineDistances();
+    refCircleGroup.add(projLine);
+
+    // --- 3D外力矢印（緑） ---
+    // 円の真下に移動させるため、初期位置は原点付近に。
+    const arrowExternalGroup = new THREE.Group();
+    scene.add(arrowExternalGroup);
+    
+    // シャフトとヘッドのジオメトリ
+    // デフォルトで長さ1のシリンダーを作成し、スケールで伸縮させる戦略
+    const extShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 12), new THREE.MeshBasicMaterial({ color: 0x27ae60 }));
+    // シリンダーはY軸向きなので、Z軸回転してX軸に寝かせる。
+    // 中心が(0,0,0)なので、端点が(0,0,0)に来るようにX方向に0.5ずらす
+    extShaft.geometry.rotateZ(-Math.PI/2); 
+    extShaft.geometry.translate(0.5, 0, 0); 
+    
+    const extHead = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 12), new THREE.MeshBasicMaterial({ color: 0x27ae60 }));
+    extHead.geometry.rotateZ(-Math.PI/2);
+    // ヘッドの原点は底面中心なので、そのままでOK（シャフトの先端に配置する）
+
+    arrowExternalGroup.add(extShaft); 
+    arrowExternalGroup.add(extHead);
+    
+    // ラベル追従用アンカー
+    const anchorExt = new THREE.Object3D(); 
+    arrowExternalGroup.add(anchorExt);
+
+    const gizmoGroup = new THREE.Group(); gizmoGroup.position.set(0, -0.1, SECTION_Z_POS); scene.add(gizmoGroup);
+    const handleMat = new THREE.MeshBasicMaterial({ color: 0x2980b9, side: THREE.DoubleSide });
+    const hoverColor = 0x3498db; const BAR_THICKNESS = 0.08; const BAR_LENGTH = 0.6;
+    function createBoxHandle(w, h, axis) {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), handleMat.clone()); mesh.rotation.x = -Math.PI / 2;
+        const hit = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(w,0.5), Math.max(h,0.5)), new THREE.MeshBasicMaterial({visible:false}));
+        hit.rotation.x = -Math.PI / 2; hit.add(mesh); hit.userData = { axis: axis, isHandle: true, type: 'dim', visual: mesh };
+        return hit;
+    }
+    const hitRight = createBoxHandle(BAR_THICKNESS, BAR_LENGTH, 'a'); gizmoGroup.add(hitRight);
+    const hitTop = createBoxHandle(BAR_LENGTH, BAR_THICKNESS, 'b'); gizmoGroup.add(hitTop);
+    const cornerContainer = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({visible:false}));
+    cornerContainer.rotation.x = -Math.PI/2;
+    const cornerVisual = new THREE.Mesh(new THREE.CircleGeometry(0.15, 32), handleMat.clone());
+    cornerContainer.add(cornerVisual); cornerContainer.userData = { axis: 'both', isHandle: true, type: 'dim', visual: cornerVisual }; gizmoGroup.add(cornerContainer);
+    
+    const eVisual = new THREE.Mesh(new THREE.CircleGeometry(0.15, 32), new THREE.MeshBasicMaterial({ color: 0x27ae60, side: THREE.DoubleSide }));
+    const eHit = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
+    eHit.rotation.x = -Math.PI / 2; eHit.add(eVisual); eHit.userData = { isHandle: true, type: 'E', visual: eVisual }; gizmoGroup.add(eHit);
+    
+    const anchorTR = new THREE.Object3D(); gizmoGroup.add(anchorTR); 
+    const anchorBL = new THREE.Object3D(); gizmoGroup.add(anchorBL); 
+
+    const lVisual = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 32), new THREE.MeshBasicMaterial({ color: 0xffa500 }));
+    const lHit = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
+    lHit.add(lVisual); lHit.userData = { isHandle: true, type: 'L', visual: lVisual }; scene.add(lHit);
+
+    const interactables = [hitRight, hitTop, cornerContainer, eHit, lHit];
+
+    // --- State & UI Logic ---
+    const state = { P0: 5.0, E: 20.5, a: 0.5, b: 0.5, L: 4.0, mode: 'forced', h: 0.05, beta: 1.0 };
+    const animState = { isRunning: false, time: 0.0, speed: 0.1 };
+    const clock = new THREE.Clock();
+    
+    let waveHistory = [];
+    let isGraphScrubbing = false;
+    let scrubStartMouseX = 0;
+    
+    const ui = { 
+        resI: document.getElementById('res-val-I'),
+        resDb: document.getElementById('res-val-db'),
+        resDs: document.getElementById('res-val-ds'),
+        resTotal: document.getElementById('res-val-total'),
+        resTheta: document.getElementById('res-val-theta'),
+        resT: document.getElementById('res-val-T'),
+        
+        labelA: document.getElementById('label-a'), labelB: document.getElementById('label-b'), 
+        labelE: document.getElementById('label-E'), 
+        labelL: document.getElementById('label-L'),
+        labelHandle: document.getElementById('label-handle'), labelHandleE: document.getElementById('label-handle-e'), 
+        labelHandleL: document.getElementById('label-handle-l'),
+        labelExt: document.getElementById('label-force-ext'),
+        
+        toggleBending: document.getElementById('toggle-bending'),
+        toggleShear: document.getElementById('toggle-shear'),
+        
+        btnPlayPause: document.getElementById('btn-play-pause'),
+        btnStop: document.getElementById('btn-stop'),
+        
+        barBend: document.getElementById('bar-bend'), barShear: document.getElementById('bar-shear'),
+        textBendPct: document.getElementById('text-bend-pct'), textShearPct: document.getElementById('text-shear-pct'),
+
+        speedSlider: document.getElementById('speed-slider'),
+        speedLabel: document.getElementById('speed-label'),
+        
+        exagSlider: document.getElementById('exag-slider'),
+        exagLabel: document.getElementById('exag-label'),
+
+        modeSelector: document.getElementById('mode-selector'),
+        dampingNote: document.getElementById('damping-note'),
+        
+        dampingPanel: document.getElementById('damping-control-panel'),
+        dampingSlider: document.getElementById('damping-slider'),
+        dampingLabel: document.getElementById('damping-slider-label'),
+        
+        betaRow: document.getElementById('beta-control-row'),
+        betaSlider: document.getElementById('beta-slider'),
+        betaLabel: document.getElementById('beta-slider-label'),
+
+        legendBlueLabel: document.getElementById('legend-blue-label'),
+
+        graphCanvas: document.getElementById('force-graph-canvas'),
+        timeCanvas: document.getElementById('time-graph-canvas'),
+        energyCanvas: document.getElementById('energy-graph-canvas'),
+        schematicCanvas: document.getElementById('schematic-canvas')
+    };
+
+    const graphCtx = ui.graphCanvas.getContext('2d');
+    const timeCtx = ui.timeCanvas.getContext('2d'); 
+    const energyCtx = ui.energyCanvas.getContext('2d');
+    const schematicCtx = ui.schematicCanvas.getContext('2d');
+
+    const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+    let isDragging = false; let activeHandle = null; let dragStartVal = 0; let dragStartMouse = { x: 0, y: 0 };
+
+    function toInverseFraction(val) {
+        if (!val || Math.abs(val) < 0.0000001) return "0";
+        const denom = Math.round(1 / val);
+        if (denom === 0) return "1/0 (Error)"; 
+        return `1/${denom}`;
+    }
+
+    // --- スライダーイベント ---
+    ui.dampingSlider.addEventListener('input', (e) => {
+        state.h = parseFloat(e.target.value);
+        ui.dampingLabel.innerText = `減衰 h: ${state.h.toFixed(2)}`;
+        if (!animState.isRunning) update();
+    });
+
+    // 振動数比スライダーのマッピングロジック変更
+    // range: 0 ~ 200 (center=100)
+    // 0~100 -> 0.1~1.0 (step 0.01)
+    // 101~200 -> 1.0~10.0 (step 1.0)
+    ui.betaSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        let realBeta = 1.0;
+        if (val <= 100) {
+            // 0 -> 0.1, 100 -> 1.0
+            realBeta = 0.1 + (val / 100.0) * 0.9;
+            // 0.01単位に丸める
+            realBeta = Math.round(realBeta * 100) / 100;
+        } else {
+            // 101 -> 2.0, 200 -> ~10.0
+            // 100刻みで 1.0 -> 10.0 なので、 step = (val-100)/100 * 9.0
+            const step = (val - 100) / 100.0; 
+            const raw = 1.0 + step * 9.0;
+            // 1.0単位に丸める (整数)
+            realBeta = Math.round(raw);
+        }
+        
+        state.beta = realBeta;
+        
+        const labelStr = (realBeta < 10) ? realBeta.toFixed(2) : realBeta.toFixed(1);
+        ui.betaLabel.innerText = `振動数比 β: ${labelStr}`;
+        
+        if (!animState.isRunning) update();
+    });
+
+    // --- モード切替 ---
+    ui.modeSelector.addEventListener('change', (e) => {
+        state.mode = e.target.value;
+        ui.btnStop.click(); 
+        
+        if (state.mode === 'forced') {
+            ui.dampingNote.innerText = "外力 P(t) = P₀sin(ωt), ω = β·ωn";
+            ui.dampingPanel.style.display = 'flex';
+            ui.betaRow.style.display = 'flex';
+            ui.legendBlueLabel.innerHTML = '復元力＋減衰力<span class="sub-text">F_int</span>';
+        } else {
+            // Undamped Free
+            ui.dampingNote.innerText = "初期変位からの自由振動 (減衰なし)";
+            ui.dampingPanel.style.display = 'none';
+            ui.betaRow.style.display = 'none';
+            ui.legendBlueLabel.innerHTML = '復元力<span class="sub-text">Restoring F</span>';
+        }
+        update();
+    });
+
+    ui.speedSlider.addEventListener('input', (e) => {
+        animState.speed = parseFloat(e.target.value);
+        ui.speedLabel.innerText = `再生速度: ${animState.speed.toFixed(1)}x`;
+    });
+    
+    ui.exagSlider.addEventListener('input', (e) => {
+        visualExaggeration = parseFloat(e.target.value);
+        ui.exagLabel.innerText = `変形誇張: ${visualExaggeration}x`;
+        if(!animState.isRunning) update(); 
+    });
+
+    ui.btnPlayPause.addEventListener('click', () => {
+        if (animState.time === 0 && !animState.isRunning) {
+            let changed = false;
+            if (!ui.toggleBending.checked) { ui.toggleBending.checked = true; changed = true; }
+            if (!ui.toggleShear.checked) { ui.toggleShear.checked = true; changed = true; }
+            if (changed) handleToggleChange();
+
+            ui.toggleBending.disabled = true;
+            ui.toggleShear.disabled = true;
+            ui.toggleBending.closest('.toggle-wrapper').style.opacity = '0.5';
+            ui.toggleBending.closest('.toggle-wrapper').style.pointerEvents = 'none';
+            ui.toggleShear.closest('.toggle-wrapper').style.opacity = '0.5';
+            ui.toggleShear.closest('.toggle-wrapper').style.pointerEvents = 'none';
+            ui.modeSelector.disabled = true;
+            ui.dampingSlider.disabled = true; 
+            ui.betaSlider.disabled = true;
+        }
+
+        animState.isRunning = !animState.isRunning;
+        if(animState.isRunning) {
+            ui.btnPlayPause.innerText = "一時停止 (Pause)";
+            ui.btnPlayPause.classList.add('running');
+            clock.start();
+            if (animState.time === 0) {
+                const initRes = calculateDisplacement(0);
+                const F_int_init = initRes.stiffness * initRes.x;
+                waveHistory = [{ t: 0, x: initRes.x, v: initRes.v, p: 0, f: F_int_init }];
+            }
+            ui.timeCanvas.classList.remove('scrubbable');
+            ui.energyCanvas.classList.remove('scrubbable');
+            animate();
+        } else {
+            ui.btnPlayPause.innerText = "再開 (Resume)";
+            ui.btnPlayPause.classList.remove('running');
+            clock.stop();
+            ui.timeCanvas.classList.add('scrubbable');
+            ui.energyCanvas.classList.add('scrubbable');
+            update();
+        }
+    });
+
+    ui.btnStop.addEventListener('click', () => {
+        animState.isRunning = false;
+        animState.time = 0; 
+        waveHistory = [];   
+        clock.stop();
+        ui.btnPlayPause.innerText = "振動開始 (Start)";
+        ui.btnPlayPause.classList.remove('running');
+        ui.timeCanvas.classList.remove('scrubbable');
+        ui.energyCanvas.classList.remove('scrubbable');
+        ui.modeSelector.disabled = false;
+
+        ui.toggleBending.disabled = false;
+        ui.toggleShear.disabled = false;
+        ui.toggleBending.closest('.toggle-wrapper').style.opacity = '1';
+        ui.toggleBending.closest('.toggle-wrapper').style.pointerEvents = 'auto';
+        ui.toggleShear.closest('.toggle-wrapper').style.opacity = '1';
+        ui.toggleShear.closest('.toggle-wrapper').style.pointerEvents = 'auto';
+        
+        ui.dampingSlider.disabled = false; 
+        ui.betaSlider.disabled = false;
+        update(); 
+    });
+
+    function calculateCompliance(enableBend, enableShear) {
+        const E_phys = state.E * 1000000.0; 
+        const G_phys = E_phys / (2 * (1 + NU));
+        const A_area = state.a * state.b; 
+        const I_phys = (state.b * Math.pow(state.a, 3)) / 12; 
+        const L_phys = state.L; 
+
+        const termBend = (Math.pow(L_phys, 3)) / (3 * E_phys * I_phys);
+        const termShear = (G_phys * A_area > 0) ? (KAPPA * L_phys) / (G_phys * A_area) : 0;
+        
+        return (enableBend ? termBend : 0) + (enableShear ? termShear : 0);
+    }
+
+    function calculateDisplacement(t) {
+        const E_phys = state.E * 1000000.0; 
+        const A_area = state.a * state.b; 
+        const L_phys = state.L; 
+        const Mass = A_area * L_phys * RHO_CONC; 
+
+        const total_comp = calculateCompliance(ui.toggleBending.checked, ui.toggleShear.checked);
+        const Stiffness = (total_comp > 1e-10) ? (1.0 / total_comp) : 99999999; 
+        const omega_n = Math.sqrt(Stiffness / Mass);
+
+        // 強制振動モード
+        if (state.mode === 'forced') {
+             const h = state.h;
+             const beta = state.beta;
+             const omega = beta * omega_n;
+             const P_mag = state.P0;
+             const delta_st = P_mag / Stiffness;
+
+             // ★共振モード判定★
+             const isResonance = (h < 0.01 && Math.abs(beta - 1.0) < 0.02);
+
+             let x = 0;
+             let v = 0;
+
+             if (isResonance) {
+                 const wt = omega_n * t;
+                 x = 0.5 * delta_st * (Math.sin(wt) - wt * Math.cos(wt));
+                 v = 0.5 * delta_st * omega_n * (wt * Math.sin(wt));
+             } else {
+                 const omega_d = omega_n * Math.sqrt(Math.max(0, 1 - h*h));
+                 const M_denom_sq = Math.pow(1 - beta*beta, 2) + Math.pow(2*h*beta, 2);
+                 let M = 0;
+                 if (M_denom_sq < 1e-10) { M = 10000.0; } else { M = 1.0 / Math.sqrt(M_denom_sq); }
+                 
+                 const phi = Math.atan2(2*h*beta, 1 - beta*beta);
+                 const X_steady = delta_st * M; 
+
+                 const A = X_steady * Math.sin(phi);
+                 let B = 0;
+                 if (omega_d > 1e-6) {
+                    B = (h * omega_n * A - X_steady * omega * Math.cos(phi)) / omega_d;
+                 }
+
+                 const decay = Math.exp(-h * omega_n * t);
+                 const transient_x = decay * (A * Math.cos(omega_d * t) + B * Math.sin(omega_d * t));
+                 const steady_x = X_steady * Math.sin(omega * t - phi);
+                 x = transient_x + steady_x;
+
+                 const transient_v = -h * omega_n * decay * (A * Math.cos(omega_d * t) + B * Math.sin(omega_d * t))
+                                   + decay * (-A * omega_d * Math.sin(omega_d * t) + B * omega_d * Math.cos(omega_d * t));
+                 const steady_v = X_steady * omega * Math.cos(omega * t - phi);
+                 v = transient_v + steady_v;
+             }
+             
+             const current_P_ext = P_mag * Math.sin(omega * t);
+
+             return { x: x, v: v, omega: omega, stiffness: Stiffness, mass: Mass, p_ext: current_P_ext };
+
+        } else {
+             const amplitude = state.P0 * total_comp;
+             const x = amplitude * Math.cos(omega_n * t);
+             const v = -amplitude * omega_n * Math.sin(omega_n * t);
+             return { x: x, v: v, omega: omega_n, stiffness: Stiffness, mass: Mass, p_ext: 0 };
+        }
+    }
+
+    let prevBend = ui.toggleBending.checked;
+    let prevShear = ui.toggleShear.checked;
+
+    function handleToggleChange() {
+        if (state.mode === 'forced') return;
+
+        const currBend = ui.toggleBending.checked;
+        const currShear = ui.toggleShear.checked;
+        const oldComp = calculateCompliance(prevBend, prevShear);
+        const newComp = calculateCompliance(currBend, currShear);
+
+        if (newComp > oldComp) {
+            if (newComp > 0) {
+                 if (oldComp > 0) state.P0 = state.P0 * (oldComp / newComp); 
+            }
+        }
+        prevBend = currBend;
+        prevShear = currShear;
+        if (!animState.isRunning) update();
+    }
+
+    ui.toggleBending.addEventListener('change', handleToggleChange);
+    ui.toggleShear.addEventListener('change', handleToggleChange);
+
+    function setupGraphScrubbing(canvas) {
+        canvas.addEventListener('pointerdown', (e) => {
+            if (!animState.isRunning && animState.time > 0) {
+                isGraphScrubbing = true;
+                scrubStartMouseX = e.clientX;
+                canvas.setPointerCapture(e.pointerId);
+            }
+        });
+        canvas.addEventListener('pointermove', (e) => {
+            if (isGraphScrubbing) {
+                const dx = e.clientX - scrubStartMouseX;
+                scrubStartMouseX = e.clientX;
+                const dt = dx * 0.005; 
+                let targetTime = animState.time + dt;
+                if (targetTime < 0) targetTime = 0;
+                
+                if (dt > 0) {
+                    const step = 0.002; 
+                    let t = animState.time;
+                    while(t < targetTime) {
+                        t += step;
+                        if(t > targetTime) t = targetTime;
+                        const res = calculateDisplacement(t);
+                        const F_int = res.stiffness * res.x + (2 * state.h * Math.sqrt(res.mass * res.stiffness)) * res.v;
+                        waveHistory.push({ t: t, x: res.x, v: res.v, p: res.p_ext, f: F_int });
+                        if(t >= targetTime) break;
+                    }
+                } else {
+                    waveHistory = waveHistory.filter(pt => pt.t <= targetTime);
+                }
+                animState.time = targetTime;
+                update(); 
+            }
+        });
+        canvas.addEventListener('pointerup', (e) => {
+            isGraphScrubbing = false;
+            canvas.releasePointerCapture(e.pointerId);
+        });
+    }
+    
+    setupGraphScrubbing(ui.timeCanvas);
+    setupGraphScrubbing(ui.energyCanvas);
+
+
+    function update() {
+        const dt = animState.isRunning ? clock.getDelta() * animState.speed : 0;
+        if (animState.isRunning) {
+            animState.time += dt;
+        }
+
+        const E_phys = state.E * 1000000.0; 
+        const G_phys = E_phys / (2 * (1 + NU));
+        const A_area = state.a * state.b; 
+        const I_phys = (state.b * Math.pow(state.a, 3)) / 12; 
+        const L_phys = state.L; 
+
+        const comp_b = (Math.pow(L_phys, 3)) / (3 * E_phys * I_phys);
+        const comp_s = (G_phys * A_area > 0) ? (KAPPA * L_phys) / (G_phys * A_area) : 0;
+        
+        const active_comp_b = ui.toggleBending.checked ? comp_b : 0;
+        const active_comp_s = ui.toggleShear.checked ? comp_s : 0;
+        const total_comp = active_comp_b + active_comp_s;
+
+        const calcRes = calculateDisplacement(animState.time);
+        
+        const disp_total_phys = calcRes.x;
+        const v_current = calcRes.v;
+        const Stiffness = calcRes.stiffness;
+        const Mass = calcRes.mass;
+        const omega = calcRes.omega;
+        const Period = (omega > 0) ? (2 * Math.PI / omega) : 0;
+        const P_ext_current = calcRes.p_ext;
+
+        const F_restoring = Stiffness * disp_total_phys;
+        let F_damping = 0;
+        if (state.mode === 'forced') {
+             const c_coeff = 2 * state.h * Math.sqrt(Mass * Stiffness);
+             F_damping = c_coeff * v_current;
+        }
+        const F_internal = F_restoring + F_damping;
+
+        const isActive = (animState.time > 0); 
+        const isPaused = isActive && !animState.isRunning; 
+
+        if (isActive) {
+            lHit.visible = false;            
+            hitRight.visible = false;
+            hitTop.visible = false;
+            cornerContainer.visible = false;
+            eHit.visible = false;
+            
+            ui.labelL.style.opacity = 0; ui.labelHandleL.style.opacity = 0;
+            ui.labelHandle.style.opacity = 0; ui.labelHandleE.style.opacity = 0;
+            ui.labelA.style.opacity = 0; ui.labelB.style.opacity = 0; ui.labelE.style.opacity = 0;
+        } else {
+            lHit.visible = true;
+            hitRight.visible = true;
+            hitTop.visible = true;
+            cornerContainer.visible = true;
+            eHit.visible = true;
+            
+            ui.labelL.style.opacity = 1; 
+            ui.labelHandleL.style.opacity = 1;
+            ui.labelHandle.style.opacity = 1; 
+            ui.labelHandleE.style.opacity = 1;
+            ui.labelA.style.opacity = 1; 
+            ui.labelB.style.opacity = 1; 
+            ui.labelE.style.opacity = 1;
+        }
+
+        let val_b = 0, val_s = 0;
+        if (total_comp > 1e-12) {
+            val_b = disp_total_phys * (active_comp_b / total_comp);
+            val_s = disp_total_phys * (active_comp_s / total_comp);
+        }
+
+        const theta_phys = (L_phys > 0) ? (disp_total_phys / L_phys) : 0;
+
+        if (animState.isRunning) {
+            waveHistory.push({ 
+                t: animState.time, 
+                x: disp_total_phys, 
+                v: v_current, 
+                p: P_ext_current,
+                f: F_internal 
+            });
+            
+            const cutoff = animState.time - 30.0;
+            if (waveHistory.length > 0 && waveHistory[0].t < cutoff) {
+                while(waveHistory.length > 0 && waveHistory[0].t < cutoff) {
+                    waveHistory.shift();
+                }
+            }
+            if (waveHistory.length > 4000) waveHistory.shift();
+        } else if (animState.time === 0) {
+             waveHistory = [{ t: 0, x: disp_total_phys, v: v_current, p: P_ext_current, f: F_internal }];
+        }
+
+        ui.resI.innerText = I_phys.toFixed(4); 
+        ui.resT.innerText = (2 * Math.PI / Math.sqrt(Stiffness/Mass)).toFixed(3); 
+        ui.resDb.innerText = val_b.toFixed(4);
+        ui.resDs.innerText = val_s.toFixed(4);
+        ui.resTotal.innerText = disp_total_phys.toFixed(4);
+        
+        const thetaFrac = toInverseFraction(theta_phys);
+        const thetaDisplay = `${theta_phys.toFixed(4)} rad (${thetaFrac})`;
+        ui.resTheta.innerText = thetaDisplay;
+
+        let pctB = 0, pctS = 0;
+        if (total_comp > 1e-10) {
+            pctB = (active_comp_b / total_comp) * 100;
+            pctS = (active_comp_s / total_comp) * 100;
+        }
+        ui.barBend.style.width = `${pctB}%`;
+        ui.barShear.style.width = `${pctS}%`;
+        ui.textBendPct.innerText = `曲げ: ${Math.round(pctB)}%`;
+        ui.textShearPct.innerText = `せん断: ${Math.round(pctS)}%`;
+
+        const visual_b = val_b * visualExaggeration; 
+        const visual_s = val_s * visualExaggeration;
+        const positions = columnMesh.geometry.attributes.position;
+        const widthScale = 2.0; 
+        const halfWidth = (state.a * widthScale) / 2;
+        const redPos = redLines.geometry.attributes.position; let redIdx = 0; const redStep = SEGMENTS / 10;
+        
+        for (let i = 0; i <= SEGMENTS; i++) {
+            const z_local = (i / SEGMENTS) * L_phys;
+            const H = L_phys;
+            const xi = z_local / H; 
+            const norm_shape = 0.5 * (3 * Math.pow(xi, 2) - Math.pow(xi, 3));
+            const x_bend = visual_b * norm_shape;
+            const x_shear = visual_s * xi;
+            const centerX = x_bend + x_shear;
+            const dShape_norm = 0.5 * (6 * xi - 3 * Math.pow(xi, 2));
+            const theta_visual = Math.atan( (visual_b / (H * widthScale)) * dShape_norm ); 
+            const cos = Math.cos(theta_visual), sin = Math.sin(theta_visual);
+            const z_world = z_local * widthScale;
+            positions.setXYZ(i*2,   centerX - halfWidth*cos, 0, z_world + halfWidth*sin); 
+            positions.setXYZ(i*2+1, centerX + halfWidth*cos, 0, z_world - halfWidth*sin);
+            if (i > 0 && i < SEGMENTS && i % redStep === 0) { 
+                redPos.setXYZ(redIdx++, positions.getX(i*2), 0, positions.getZ(i*2)); 
+                redPos.setXYZ(redIdx++, positions.getX(i*2+1), 0, positions.getZ(i*2+1)); 
+            }
+        }
+        positions.needsUpdate = true; redPos.needsUpdate = true; columnWire.geometry.dispose(); columnWire.geometry = new THREE.EdgesGeometry(columnMesh.geometry);
+
+        const tipX = (positions.getX(SEGMENTS * 2) + positions.getX(SEGMENTS * 2 + 1)) / 2;
+        const tipZ = (positions.getZ(SEGMENTS * 2) + positions.getZ(SEGMENTS * 2 + 1)) / 2;
+
+        if (isPaused || animState.isRunning || animState.time > 0) {
+            
+            // ★ 外力矢印と参照円のアニメーションロジック
+            if (state.mode === 'forced') {
+                arrowExternalGroup.visible = true;
+                refCircleGroup.visible = true;
+
+                // 参照円の位置 (tipZから少し上)
+                const refCircleZ = tipZ + refCircleRadius + 1.0; 
+                refCircleGroup.position.set(0, 0, refCircleZ);
+
+                // アニメーション (回転棒)
+                const omega = calcRes.omega;
+                const theta = omega * animState.time - Math.PI / 2;
+                
+                // 棒の先端位置 (XZ平面)
+                const rx = refCircleRadius * Math.cos(theta);
+                const rz = refCircleRadius * Math.sin(theta);
+                
+                const rodPos = rodLine.geometry.attributes.position;
+                rodPos.setXYZ(1, rx, 0, rz);
+                rodPos.needsUpdate = true;
+                
+                // --- 矢印の制御 (伸縮) ---
+                const arrowLen = Math.abs(rx);
+                // 矢印の高さ: 参照円の下、柱の上
+                const arrowYPos = tipZ + 0.6; 
+                arrowExternalGroup.position.set(0, 0, arrowYPos);
+                
+                // 向き (rxが正なら右、負なら左)
+                arrowExternalGroup.rotation.z = (rx >= 0) ? 0 : Math.PI;
+
+                // スケール調整
+                const headLen = 0.4;
+                const shaftLen = arrowLen - headLen;
+
+                if (arrowLen < headLen) {
+                    extShaft.visible = false;
+                    extHead.scale.set(arrowLen/headLen, arrowLen/headLen, arrowLen/headLen); 
+                    const scaleVal = arrowLen/headLen;
+                    extHead.position.set(arrowLen - scaleVal*0.2, 0, 0); 
+                } else {
+                    extShaft.visible = true;
+                    extShaft.scale.set(shaftLen, 1, 1); 
+                    extHead.scale.set(1, 1, 1);
+                    extHead.position.set(arrowLen - 0.2, 0, 0); // 先端合わせ (隙間解消済)
+                }
+
+                // --- 投影線 (棒の先端 -> 矢印の先端) ---
+                const projPos = projLine.geometry.attributes.position;
+                // 始点: 棒の先端 (refCircleGroup内のローカル座標) -> (rx, 0, rz)
+                projPos.setXYZ(0, rx, 0, rz); 
+                
+                // 終点: 矢印の先端 (refCircleGroupから見た相対座標)
+                const diffZ = arrowYPos - refCircleZ;
+                projPos.setXYZ(1, rx, 0, diffZ); 
+                
+                projPos.needsUpdate = true;
+                projLine.computeLineDistances(); // 点線の再計算
+
+                // --- ラベル追従 (修正点) ---
+                ui.labelExt.style.opacity = 1;
+                anchorExt.position.set(Math.abs(rx), 0, 0); 
+                
+                const labelGap = 15; 
+                if (rx >= 0) {
+                    // 右向き -> ラベルは右側
+                    updateLabelSpecial(ui.labelExt, anchorExt, labelGap, 0, 'left', new THREE.Vector3(0,0,0));
+                } else {
+                    // 左向き -> ラベルは左側
+                    updateLabelSpecial(ui.labelExt, anchorExt, -labelGap, 0, 'right', new THREE.Vector3(0,0,0));
+                }
+
+            } else {
+                arrowExternalGroup.visible = false;
+                refCircleGroup.visible = false;
+                ui.labelExt.style.opacity = 0;
+            }
+
+        } else {
+            arrowExternalGroup.visible = false;
+            refCircleGroup.visible = false;
+            ui.labelExt.style.opacity = 0;
+        }
+
+        const drawA = state.a * widthScale; const drawB = state.b * widthScale;
+        sectionRect.scale.set(drawA, drawB, 1); updateHatching(drawA, drawB, state.E);
+
+        const halfA = drawA / 2; const halfB = drawB / 2;
+        hitRight.position.set(halfA, 0, 0); hitTop.position.set(0, 0, halfB); cornerContainer.position.set(halfA, 0, halfB); eHit.position.set(-halfA, 0, -halfB);
+        anchorTR.position.set(halfA, 0, halfB); anchorBL.position.set(-halfA, 0, -halfB);
+
+        const xi_mid = 0.5;
+        const norm_shape_mid = 0.5 * (3 * Math.pow(xi_mid, 2) - Math.pow(xi_mid, 3)); 
+        const x_bend_mid = visual_b * norm_shape_mid;
+        const x_shear_mid = visual_s * xi_mid;
+        const centerX_mid = x_bend_mid + x_shear_mid;
+        lHit.position.set(centerX_mid, 0, (L_phys * widthScale) / 2);
+
+        updateLabelSpecial(ui.labelA, hitRight, 20, 5, 'left'); ui.labelA.innerText = `a = ${state.a.toFixed(1)}m`;
+        updateLabelSpecial(ui.labelB, anchorTR, 0, -25, 'right'); ui.labelB.innerText = `b = ${state.b.toFixed(1)}m`;
+        updateLabelSpecial(ui.labelHandle, anchorTR, 20, -10, 'left');
+        
+        updateLabelSpecial(ui.labelE, anchorBL, 0, 30, 'center'); ui.labelE.innerText = `E = ${state.E.toFixed(1)} kN/mm²`;
+        updateLabelSpecial(ui.labelHandleE, anchorBL, -15, 0, 'right');
+        
+        if (isActive) {
+            // opacity handled above
+        } else {
+            const leftEdgeOffset = new THREE.Vector3(-halfWidth, 0, 0); 
+            updateLabelSpecial(ui.labelL, lHit, -85, 50, 'top-left', leftEdgeOffset); ui.labelL.innerText = `L = ${state.L.toFixed(1)}m`;
+            updateLabelSpecial(ui.labelHandleL, lHit, -75, 15, 'top-left', leftEdgeOffset);
+        }
+
+        drawForceGraph(disp_total_phys, Stiffness, F_internal, P_ext_current, state.P0, state.mode === 'forced');
+        drawTimeGraph(waveHistory, L_phys, animState.time, Period, state.P0/Stiffness, state.mode === 'forced');
+        
+        const Ep = 0.5 * Stiffness * disp_total_phys * disp_total_phys;
+        const Ek = 0.5 * Mass * v_current * v_current;
+        const E_total = Ep + Ek; 
+        
+        drawEnergyGraph(waveHistory, L_phys, animState.time, Stiffness, Mass, E_total, state.mode === 'forced');
+        
+        drawModelSchematic(state, Mass, state.mode === 'forced');
+    }
+
+    function drawModelSchematic(st, m, isForced) {
+        const ctx = schematicCtx;
+        const W = ui.schematicCanvas.width;
+        const H = ui.schematicCanvas.height;
+        ctx.clearRect(0, 0, W, H);
+
+        const centerX = W / 2 - 10; 
+        const groundY = H - 20;
+        
+        // 地面
+        ctx.beginPath();
+        ctx.moveTo(centerX - 50, groundY); 
+        ctx.lineTo(centerX + 50, groundY);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000';
+        ctx.stroke();
+        
+        // 床ハッチング
+        ctx.beginPath();
+        ctx.lineWidth = 1;
+        for(let x = centerX - 50; x <= centerX + 50; x += 8) {
+            ctx.moveTo(x, groundY);
+            ctx.lineTo(x - 4, groundY + 8);
+        }
+        ctx.stroke();
+
+        const colWidth = 2 + st.a * 6; 
+        const colHeight = 50; 
+        const topY = groundY - colHeight;
+
+        // 柱
+        ctx.beginPath();
+        ctx.moveTo(centerX, groundY);
+        ctx.lineTo(centerX, topY);
+        ctx.moveTo(centerX + 0.5, groundY);
+        ctx.lineTo(centerX + 0.5, topY);
+        ctx.lineCap = 'butt'; ctx.lineWidth = colWidth; ctx.strokeStyle = '#000'; ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(centerX - colWidth/2 - 2, groundY);
+        ctx.lineTo(centerX + colWidth/2 + 2, groundY);
+        ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.lineCap = 'round'; ctx.stroke();
+
+        const radius = 6 + 5 * Math.pow(m, 1/3); 
+
+        // 質点球
+        ctx.beginPath();
+        ctx.arc(centerX, topY - radius + 2, radius, 0, Math.PI*2);
+        ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+        
+        // 球のハッチング
+        ctx.save();
+        ctx.clip();
+        ctx.beginPath();
+        ctx.lineWidth = 1;
+        for(let x = centerX - radius - 10; x <= centerX + radius + 10; x += 5) {
+            ctx.moveTo(x, topY - radius * 2);
+            ctx.lineTo(x - 15, topY + radius * 2);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#000';
+        ctx.font = '16px "Comic Sans MS", cursive, sans-serif'; 
+        ctx.fillText('m', centerX + radius + 5, topY);
+        ctx.fillText('k', centerX + 8 + colWidth/2, groundY - colHeight/2 + 5);
+
+        // --- 減衰・外力要素 ---
+        if (isForced) {
+            // ダンパー
+            const scale = radius / 12.0; 
+            const cylinderW = 13 * scale; 
+            const cylinderH = 12 * scale; 
+            const rodLen = 15 * scale; 
+
+            const sphereLeftX = centerX - radius; 
+            const damperY = topY - radius + 2; 
+
+            const cylRightX = sphereLeftX - rodLen;
+            const cylLeftX = cylRightX - cylinderW;
+            const wallX = cylLeftX - rodLen;
+
+            ctx.beginPath(); 
+            ctx.moveTo(wallX, groundY); 
+            ctx.lineTo(wallX, damperY - 15);
+            ctx.lineWidth = 2; ctx.strokeStyle = '#000'; ctx.stroke();
+            ctx.lineWidth = 1;
+            for(let y = groundY; y > damperY - 15; y -= 6) {
+                ctx.beginPath(); ctx.moveTo(wallX, y); ctx.lineTo(wallX - 4, y - 4); ctx.stroke();
+            }
+
+            ctx.beginPath(); ctx.moveTo(wallX, damperY); ctx.lineTo(cylLeftX, damperY); ctx.lineWidth = 2; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.fillRect(cylLeftX, damperY - cylinderH/2, cylinderW, cylinderH); 
+            ctx.strokeRect(cylLeftX, damperY - cylinderH/2, cylinderW, cylinderH); 
+
+            const shortLineLen = 5 * scale;
+            ctx.beginPath();
+            ctx.moveTo(cylLeftX, damperY - cylinderH/2); ctx.lineTo(cylLeftX - shortLineLen, damperY - cylinderH/2);
+            ctx.moveTo(cylLeftX, damperY + cylinderH/2); ctx.lineTo(cylLeftX - shortLineLen, damperY + cylinderH/2);
+            ctx.stroke();
+
+            ctx.beginPath(); ctx.moveTo(cylRightX, damperY); ctx.lineTo(sphereLeftX, damperY); ctx.lineWidth = 2; ctx.stroke();
+            
+            ctx.fillStyle = '#000'; ctx.font = 'bold 14px sans-serif';
+            ctx.fillText('c', cylLeftX + cylinderW/2 - 3, damperY - cylinderH/2 - 5);
+
+            // --- 外力矢印 (P sin wt) ---
+            const arrowX = centerX + radius + 15;
+            const arrowY = topY - radius + 2;
+            const arrowLen = 20;
+            
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY);
+            ctx.lineTo(arrowX + arrowLen, arrowY);
+            // 矢印の頭
+            ctx.lineTo(arrowX + arrowLen - 5, arrowY - 3);
+            ctx.moveTo(arrowX + arrowLen, arrowY);
+            ctx.lineTo(arrowX + arrowLen - 5, arrowY + 3);
+            
+            ctx.lineWidth = 2; ctx.strokeStyle = '#27ae60'; ctx.stroke();
+            
+            // ★モデル図の表記修正: 左寄せ配置で切れを防ぐ
+            ctx.fillStyle = '#27ae60'; ctx.font = 'bold 14px sans-serif';
+            ctx.fillText('P₀sin(ωt)', arrowX, arrowY - 8);
+        }
+    }
+
+    function drawTimeGraph(data, L_phys, currentTime, period, staticDisp, isForced) {
+        const ctx = timeCtx;
+        const W = ui.timeCanvas.width;
+        const H = ui.timeCanvas.height;
+        ctx.clearRect(0, 0, W, H);
+        
+        const LEFT_MARGIN = 15; 
+
+        // ★オートスケール
+        let maxVal = 0;
+        if (data.length > 0) {
+            maxVal = data.reduce((max, p) => Math.max(max, Math.abs(p.x)), 0);
+        }
+        if (maxVal < 1e-6) maxVal = 1e-6;
+        
+        const displayLimit = maxVal * 1.2; 
+
+        const TIME_WINDOW = 0.5; // 秒
+        let startTime = 0;
+        let endTime = TIME_WINDOW;
+        if (currentTime > TIME_WINDOW) {
+            endTime = currentTime;
+            startTime = currentTime - TIME_WINDOW;
+        }
+
+        const toScreenX = (t) => LEFT_MARGIN + ((t - startTime) / TIME_WINDOW) * ((W - LEFT_MARGIN) * 0.95);
+        const toScreenY = (x) => (H / 2) - (x / displayLimit) * (H / 2 * 0.9); 
+
+        // 軸: 黒
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(LEFT_MARGIN, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(LEFT_MARGIN, 0); ctx.lineTo(LEFT_MARGIN, H); ctx.stroke();
+
+        ctx.strokeStyle = '#ecf0f1';
+        const startStep = Math.floor(startTime * 10);
+        const endStep = Math.ceil(endTime * 10);
+        
+        ctx.fillStyle = '#000000'; 
+        ctx.font = '12px sans-serif';
+
+        for(let step = startStep; step <= endStep; step++) {
+            const t = step / 10.0;
+            if (t < startTime) continue;
+            const sx = toScreenX(t);
+            ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+            
+            if (step % 5 === 0) {
+                if (step === endStep) {
+                    ctx.textAlign = 'right';
+                    ctx.fillText(t.toFixed(1) + 's', sx - 2, H - 5);
+                } else {
+                    ctx.textAlign = 'left';
+                    ctx.fillText(t.toFixed(1) + 's', sx + 4, H - 5);
+                }
+            }
+        }
+        ctx.textAlign = 'left';
+
+        // クリッピング
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(LEFT_MARGIN, 0, W - LEFT_MARGIN, H);
+        ctx.clip();
+
+        if (data.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 2;
+            let started = false;
+            for(let i=0; i<data.length; i++) {
+                const pt = data[i];
+                if (pt.t < startTime - 0.05) continue; 
+                const sx = toScreenX(pt.t);
+                const sy = toScreenY(pt.x);
+                if (!started) { ctx.moveTo(sx, sy); started = true; } else { ctx.lineTo(sx, sy); }
+            }
+            ctx.stroke();
+            const lastPt = data[data.length-1];
+            if (lastPt) {
+                const sx = toScreenX(lastPt.t);
+                const sy = toScreenY(lastPt.x);
+                ctx.fillStyle = '#e67e22'; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI*2); ctx.fill();
+            }
+        }
+        ctx.restore(); 
+
+        ctx.fillStyle = '#000000'; 
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText('x', LEFT_MARGIN + 5, 15);
+        ctx.fillText('t', W - 15, H/2 - 8);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#7f8c8d';
+        ctx.font = '11px Consolas, monospace';
+        if (isForced) {
+            ctx.fillText('x = Transient + Steady', W - 5, 20);
+        }
+        
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#e67e22';
+        ctx.font = '11px monospace';
+        ctx.fillText(`+${displayLimit.toFixed(3)}m`, LEFT_MARGIN + 5, 10);
+        ctx.fillText(`-${displayLimit.toFixed(3)}m`, LEFT_MARGIN + 5, H - 2);
+
+        ctx.textAlign = 'left';
+    }
+
+    function drawEnergyGraph(data, L_phys, currentTime, k, m, E_total, isForced) {
+        const ctx = energyCtx;
+        const W = ui.energyCanvas.width;
+        const H = ui.energyCanvas.height;
+        ctx.clearRect(0, 0, W, H);
+        
+        const LEFT_MARGIN = 15; 
+        const BOTTOM_MARGIN = 25; 
+
+        // ★オートスケール
+        let maxE = 0;
+        if(data.length > 0) {
+            maxE = data.reduce((max, pt) => {
+                 const ep = 0.5 * k * pt.x * pt.x;
+                 const ek = (pt.v !== undefined) ? 0.5 * m * pt.v * pt.v : 0;
+                 return Math.max(max, ep + ek); 
+            }, 0);
+        }
+        if (maxE < 1e-12) maxE = 1e-12;
+        maxE *= 1.2;
+        
+        const TIME_WINDOW = 0.5;
+        let startTime = 0;
+        let endTime = TIME_WINDOW;
+        if (currentTime > TIME_WINDOW) {
+            endTime = currentTime;
+            startTime = currentTime - TIME_WINDOW;
+        }
+
+        const toScreenX = (t) => LEFT_MARGIN + ((t - startTime) / TIME_WINDOW) * ((W - LEFT_MARGIN) * 0.95);
+        const toScreenY = (e_val) => (H - BOTTOM_MARGIN) - (e_val / maxE) * (H * 0.85); 
+
+        // 軸
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(LEFT_MARGIN, H - BOTTOM_MARGIN); ctx.lineTo(W, H - BOTTOM_MARGIN); ctx.stroke(); 
+        ctx.beginPath(); ctx.moveTo(LEFT_MARGIN, 0); ctx.lineTo(LEFT_MARGIN, H); ctx.stroke(); 
+
+        ctx.strokeStyle = '#ecf0f1';
+        const startStep = Math.floor(startTime * 10);
+        const endStep = Math.ceil(endTime * 10);
+        
+        ctx.fillStyle = '#000000'; 
+        ctx.font = '12px sans-serif';
+
+        for(let step = startStep; step <= endStep; step++) {
+            const t = step / 10.0;
+            if (t < startTime) continue;
+            const sx = toScreenX(t);
+            ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H - BOTTOM_MARGIN); ctx.stroke();
+            if (step % 5 === 0) {
+                 ctx.textAlign = (step === endStep) ? 'right' : 'left';
+                 ctx.fillText(t.toFixed(1) + 's', sx + (step === endStep ? -2 : 4), H - 5);
+            }
+        }
+        ctx.textAlign = 'left';
+
+        // クリッピング
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(LEFT_MARGIN, 0, W - LEFT_MARGIN, H);
+        ctx.clip();
+
+        if (data.length > 0) {
+            
+            // 1. 運動エネルギー (赤)
+            ctx.beginPath();
+            ctx.moveTo(toScreenX(startTime), H - BOTTOM_MARGIN);
+            for(let i=0; i<data.length; i++) {
+                const pt = data[i]; if (pt.t < startTime - 0.05) continue;
+                const Ep_val = 0.5 * k * pt.x * pt.x;
+                const Ek_val = (pt.v !== undefined) ? 0.5 * m * pt.v * pt.v : 0;
+                ctx.lineTo(toScreenX(pt.t), toScreenY(Ep_val + Ek_val));
+            }
+            if(data.length>0) ctx.lineTo(toScreenX(data[data.length-1].t), H - BOTTOM_MARGIN);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(231, 76, 60, 0.6)'; 
+            ctx.fill();
+
+            // 2. 位置エネルギー (青)
+            ctx.beginPath();
+            ctx.moveTo(toScreenX(startTime), H - BOTTOM_MARGIN);
+            for(let i=0; i<data.length; i++) {
+                const pt = data[i]; if (pt.t < startTime - 0.05) continue;
+                const Ep_val = 0.5 * k * pt.x * pt.x;
+                ctx.lineTo(toScreenX(pt.t), toScreenY(Ep_val));
+            }
+            if(data.length>0) ctx.lineTo(toScreenX(data[data.length-1].t), H - BOTTOM_MARGIN);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(52, 152, 219, 1.0)'; 
+            ctx.fill();
+            
+            // 現在値の表示
+            const sxCurr = toScreenX(currentTime);
+            const syTotal = toScreenY(E_total);
+            ctx.beginPath();
+            ctx.arc(sxCurr, syTotal, 3, 0, Math.PI*2);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fill();
+        }
+        ctx.restore(); 
+
+        ctx.fillStyle = '#000000'; 
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText('E', LEFT_MARGIN + 5, 15);
+        ctx.fillText('t', W - 15, H - BOTTOM_MARGIN - 5);
+        
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = '11px monospace';
+        ctx.fillText(`Scale: ${maxE.toFixed(3)} J`, W - 5, 10);
+    }
+
+    function drawForceGraph(currentDisp, k, F_internal, P_ext, P0_mag, isForced) {
+        const ctx = graphCtx;
+        const W = ui.graphCanvas.width;
+        const H = ui.graphCanvas.height;
+        const cx = W / 2;
+        const cy = H / 2;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // ★オートスケール
+        let maxX = 0.01;
+        let maxF = 1.0;
+        if (waveHistory.length > 0) {
+             maxX = waveHistory.reduce((m, p) => Math.max(m, Math.abs(p.x)), 0) * 1.5;
+             // 保存された f があれば使う、なければ kx
+             maxF = waveHistory.reduce((m, p) => Math.max(m, Math.abs(p.f !== undefined ? p.f : p.x * k)), 0) * 1.2;
+        }
+        if (maxX < 1e-6) maxX = 1e-6;
+        if (maxF < 1e-5) maxF = 1e-5;
+
+        const toScreenX = (x) => cx + (x / maxX) * (W/2 * 0.9);
+        const toScreenY = (f) => cy - (f / maxF) * (H/2 * 0.9);
+
+        // 軸描画
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke(); 
+        ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, H); ctx.stroke();
+
+        // ★履歴軌跡の描画 (青い細線)
+        if (waveHistory.length > 1) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 1;
+            let first = true;
+            for(let i=0; i<waveHistory.length; i++) {
+                const pt = waveHistory[i];
+                // F_int が保存されていれば使う、なければ kx (減衰無視の近似)
+                const f_val = (pt.f !== undefined) ? pt.f : (pt.x * k); 
+                const sx = toScreenX(pt.x);
+                const sy = toScreenY(f_val);
+                if (first) { ctx.moveTo(sx, sy); first = false; }
+                else { ctx.lineTo(sx, sy); }
+            }
+            ctx.stroke();
+        }
+
+        // F_int (復元+減衰) : 青
+        const sx = toScreenX(currentDisp);
+        const sy_int = toScreenY(F_internal);
+        ctx.fillStyle = '#3498db'; 
+        ctx.beginPath(); ctx.arc(sx, sy_int, 5, 0, Math.PI*2); ctx.fill();
+
+        ctx.fillStyle = '#000000'; 
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText('x', W - 20, cy - 8);
+        ctx.fillText('F', cx + 8, 15);
+        
+        ctx.fillStyle = '#95a5a6';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`+${maxX.toFixed(3)}m`, W - 2, cy + 12);
+        ctx.fillText(`+${maxF.toFixed(1)}kN`, cx - 2, 10);
+        ctx.textAlign = 'left';
+    }
+
+    function updateHatching(w, h, E) {
+        const step = 0.25 / (E / 20.0); const minK = -w/2 - h/2; const maxK = w/2 + h/2;
+        const positions = hatchLineGeo.attributes.position.array; let pIdx = 0;
+        for(let k = minK; k <= maxK; k += step) {
+            const points = [];
+            let y1 = -w/2 - k; if (y1 >= -h/2 && y1 <= h/2) points.push(-w/2, y1);
+            let y2 = w/2 - k; if (y2 >= -h/2 && y2 <= h/2) points.push(w/2, y2);
+            let x1 = -h/2 + k; if (x1 > -w/2 && x1 < w/2) points.push(x1, -h/2); 
+            let x2 = h/2 + k; if (x2 > -w/2 && x2 < w/2) points.push(x2, h/2);
+            if (points.length >= 4 && pIdx + 6 < 1200) { 
+                positions[pIdx++] = points[0]; positions[pIdx++] = points[1]; positions[pIdx++] = 0;
+                positions[pIdx++] = points[2]; positions[pIdx++] = points[3]; positions[pIdx++] = 0;
+            }
+        }
+        for(let i=pIdx; i<1200; i++) positions[i] = 0;
+        hatchLineGeo.attributes.position.needsUpdate = true; hatchLineGeo.setDrawRange(0, pIdx / 3);
+    }
+
+    function updateLabelSpecial(el, targetObj, offsetX, offsetY, alignMode, offsetVecStr = new THREE.Vector3()) {
+        const worldPos = new THREE.Vector3();
+        targetObj.getWorldPosition(worldPos);
+        worldPos.add(offsetVecStr); 
+        const vec = worldPos.project(camera);
+        const screenX = (vec.x * .5 + .5) * width + offsetX;
+        const screenY = (vec.y * -.5 + .5) * height + offsetY;
+        el.style.left = `${screenX}px`; el.style.top = `${screenY}px`;
+        if (alignMode === 'left') el.style.transform = `translate(0, -50%)`; 
+        else if (alignMode === 'right') el.style.transform = `translate(-100%, -50%)`; 
+        else if (alignMode === 'top-left') el.style.transform = `translate(-100%, -100%)`;
+        else el.style.transform = `translate(-50%, -50%)`;
+    }
+
+    canvasWrapper.addEventListener('pointermove', onPointerMove);
+    canvasWrapper.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+
+    function onPointerMove(e) {
+        if(animState.isRunning) {
+            canvasWrapper.style.cursor = 'default';
+            return; 
+        }
+
+        const rect = canvasWrapper.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        if (isDragging && activeHandle) {
+            const type = activeHandle.userData.type;
+            const widthScale = 2.0;
+
+            if (type === 'dim') {
+                const frustumHeight = 20; const frustumWidth = frustumHeight * aspect;
+                const worldX = mx * (frustumWidth / 2);
+                const worldZ = 3 + my * (frustumHeight / 2);
+                const distZ = worldZ - SECTION_Z_POS - gizmoGroup.position.y; 
+                const axis = activeHandle.userData.axis;
+                let newValA = state.a, newValB = state.b;
+                if (axis === 'a' || axis === 'both') newValA = (Math.abs(worldX) * 2) / widthScale;
+                if (axis === 'b' || axis === 'both') newValB = (Math.abs(distZ) * 2) / widthScale;
+                const clamp = (v) => Math.min(Math.max(Math.round(v * 10) / 10, 0.5), 2.0);
+                state.a = clamp(newValA); state.b = clamp(newValB);
+            
+            } else if (type === 'E') {
+                const dx = e.clientX - dragStartMouse.x; const dy = e.clientY - dragStartMouse.y;
+                if(type === 'E') {
+                    const change = (-dx + dy) * 0.1;
+                    state.E = Math.min(Math.max(Math.round((dragStartVal + change) * 10) / 10, 10.0), 40.0);
+                } 
+            } else if (type === 'L') {
+                const dy = -(e.clientY - dragStartMouse.y); 
+                const worldDy = (dy / height) * 20; 
+                let newL = (state.L * widthScale + worldDy * 0.1) / widthScale;
+                state.L = Math.min(Math.max(newL, 1.2), 4.0);
+            }
+            
+            update(); return;
+        }
+
+        mouse.set(mx, my); raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(interactables, true);
+        
+        hitRight.userData.visual.material.color.setHex(0x2980b9); hitTop.userData.visual.material.color.setHex(0x2980b9);
+        cornerContainer.userData.visual.material.color.setHex(0x2980b9);
+        eHit.userData.visual.material.color.setHex(0x27ae60);
+        lVisual.material.color.setHex(0xffa500); 
+        
+        activeHandle = null; canvasWrapper.style.cursor = 'default';
+        if (intersects.length > 0) {
+            let obj = intersects[0].object;
+            while(!obj.userData.isHandle && obj.parent) obj = obj.parent;
+            if(obj.userData.isHandle){
+                activeHandle = obj; canvasWrapper.style.cursor = 'pointer';
+                const type = obj.userData.type;
+                if(type === 'dim') { if(obj.userData.visual) obj.userData.visual.material.color.setHex(hoverColor); } 
+                else if (type === 'E') obj.userData.visual.material.color.setHex(0x2ecc71);
+                else if (type === 'L') obj.userData.visual.material.color.setHex(0xd35400); 
+            }
+        }
+    }
+
+    function onPointerDown(e) {
+        if (activeHandle) {
+            if (animState.isRunning) return;
+            isDragging = true; canvasWrapper.style.cursor = 'grabbing';
+            dragStartMouse.x = e.clientX; dragStartMouse.y = e.clientY;
+            if (activeHandle.userData.type === 'E') dragStartVal = state.E;
+            else if (activeHandle.userData.type === 'L') dragStartVal = state.L;
+            else dragStartVal = 0;
+            update();
+        }
+    }
+    function onPointerUp() { isDragging = false; canvasWrapper.style.cursor = activeHandle ? 'pointer' : 'default'; update(); }
+    
+    function onResize() {
+        const rect = canvasWrapper.getBoundingClientRect();
+        width = rect.width; height = rect.height;
+        renderer.setSize(width, height); aspect = width / height;
+        camera.left = frustumSize * aspect / -2; camera.right = frustumSize * aspect / 2;
+        camera.top = frustumSize / 2; camera.bottom = frustumSize / -2;
+        camera.updateProjectionMatrix(); update();
+    }
+    window.addEventListener('resize', onResize);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        update();
+        renderer.render(scene, camera);
+    }
+
+    onResize(); 
+    // 初期状態のUI整合のため一度発火
+    ui.modeSelector.dispatchEvent(new Event('change'));
+    update();
+    animate();
+
+</script>
+</body>
+</html>
