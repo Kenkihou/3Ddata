@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Head Tracking Parallax</title>
+    <title>Spherical Parallax</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-        /* ウェブカメラの映像はデバッグ用以外では隠す */
-        #video-element { display: none; transform: scaleX(-1); } 
-        /* ローディング表示 */
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        #video-element { display: none; } 
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: white; font-family: sans-serif; pointer-events: none;
+            color: #eee; font-family: sans-serif; pointer-events: none; text-align: center;
         }
     </style>
     <script type="importmap">
@@ -25,7 +23,7 @@
     </script>
 </head>
 <body>
-    <div id="loading">Loading AI & Model...</div>
+    <div id="loading">Loading...<br>カメラを許可してください</div>
     <video id="video-element" autoplay playsinline></video>
 
     <script type="module">
@@ -35,67 +33,95 @@
 
         // --- 設定 ---
         const SETTINGS = {
-            sensitivity: 2.0, // カメラの移動量（大きいほど動きが大きくなる）
-            smoothness: 0.1,  // 追従の滑らかさ (0.01〜1.0: 小さいほど遅れてついてくる)
-            modelPath: './girl2.glb', // 読み込むGLBファイルのパス
-            cameraZ: 3 // カメラの初期Z位置（モデルとの距離）
+            sensitivity: 2.0, // 視差の強さ
+            smoothness: 0.1,  // 動きの滑らかさ
+            modelPath: './model.glb', 
+            fitPadding: 1.3
         };
 
-        // --- Three.js 初期化 ---
+        // --- 初期化 ---
         const scene = new THREE.Scene();
-        // 背景色（必要に応じて変更）
         scene.background = new THREE.Color(0x222222); 
 
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.z = SETTINGS.cameraZ;
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // --- ライティング (モデルに合わせて調整してください) ---
+        // --- ライティング ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
-        directionalLight.position.set(5, 5, 5);
-        scene.add(directionalLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+        dirLight.position.set(3, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
 
-        // --- GLBモデルの読み込み ---
+        // --- 変数 ---
         let mixer = null;
+        let modelCenter = new THREE.Vector3(0, 0, 0); 
+        let baseDistance = 5; // モデルとの基準距離（半径）
+        let modelReady = false;
+
+        // --- モデル読み込み ---
         const loader = new GLTFLoader();
         loader.load(SETTINGS.modelPath, (gltf) => {
             const model = gltf.scene;
-            // モデルを中心に配置
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            model.position.sub(center); // 原点合わせ
-            
+            model.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
             scene.add(model);
 
-            // アニメーションがある場合は再生
+            model.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(model);
+            box.getCenter(modelCenter); 
+            const size = box.getSize(new THREE.Vector3());
+
+            // 画面に収まる距離を計算
+            const fov = camera.fov * (Math.PI / 180);
+            const maxDim = Math.max(size.x, size.y, size.z);
+            baseDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * SETTINGS.fitPadding;
+
+            // カメラの初期位置セット（Z軸方向）
+            // ここでは位置を決めるだけで、毎フレーム animate で距離が強制補正されます
+            camera.position.copy(modelCenter).add(new THREE.Vector3(0, 0, baseDistance));
+            camera.lookAt(modelCenter);
+
+            addBackgroundObjects(modelCenter);
+
             if (gltf.animations.length > 0) {
                 mixer = new THREE.AnimationMixer(model);
-                gltf.animations.forEach((clip) => {
-                    mixer.clipAction(clip).play();
-                });
+                gltf.animations.forEach(clip => mixer.clipAction(clip).play());
             }
-            console.log("Model Loaded");
-        }, undefined, (error) => {
-            console.error('An error happened loading GLB:', error);
-            // モデルがない場合のフォールバック（赤い箱を表示）
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-            const cube = new THREE.Mesh(geometry, material);
-            scene.add(cube);
-            document.getElementById('loading').innerText = "Model load failed. Showing cube.";
+
+            modelReady = true;
+            document.getElementById('loading').style.display = 'none';
+
+        }, undefined, (err) => {
+            console.error(err);
+            document.getElementById('loading').innerText = "Load Error";
         });
 
-        // --- MediaPipe FaceLandmarker セットアップ ---
+        function addBackgroundObjects(center) {
+            const geoBox = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+            const geoIso = new THREE.IcosahedronGeometry(0.2, 0);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x4488aa });
+            for (let i = 0; i < 50; i++) {
+                const mesh = new THREE.Mesh(Math.random() > 0.5 ? geoBox : geoIso, mat);
+                mesh.position.set(
+                    center.x + (Math.random() - 0.5) * 8,
+                    center.y + (Math.random() - 0.5) * 8,
+                    center.z + (Math.random() - 0.5) * 6 - 2
+                );
+                if (mesh.position.distanceTo(center) < 2.0) continue;
+                mesh.rotation.set(Math.random()*3, Math.random()*3, 0);
+                scene.add(mesh);
+            }
+        }
+
+        // --- MediaPipe ---
         let faceLandmarker;
         let lastVideoTime = -1;
-        let targetCameraX = 0;
-        let targetCameraY = 0;
+        let targetAngleX = 0, targetAngleY = 0; // 角度で管理
         const video = document.getElementById('video-element');
 
         async function setupMediaPipe() {
@@ -107,80 +133,81 @@
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
                     delegate: "GPU"
                 },
-                outputFaceBlendshapes: false,
                 runningMode: "VIDEO",
                 numFaces: 1
             });
-
-            // ウェブカメラの起動
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
                 video.addEventListener("loadeddata", predictWebcam);
-                document.getElementById('loading').style.display = 'none';
-            } catch (err) {
-                console.error("Webcam access denied:", err);
-                document.getElementById('loading').innerText = "Webcam access denied";
-            }
+            } catch (err) { console.error(err); }
         }
 
-        // --- トラッキングループ ---
         async function predictWebcam() {
-            let startTimeMs = performance.now();
-            if (lastVideoTime !== video.currentTime) {
+            if (lastVideoTime !== video.currentTime && faceLandmarker) {
                 lastVideoTime = video.currentTime;
-                const result = faceLandmarker.detectForVideo(video, startTimeMs);
-
+                const result = faceLandmarker.detectForVideo(video, performance.now());
                 if (result.faceLandmarks.length > 0) {
-                    // 鼻先(インデックス1)または眉間(インデックス168)などの座標を使用
-                    // MediaPipeの座標系は上が0、下が1、左が0、右が1
-                    const face = result.faceLandmarks[0][1]; // 鼻先の座標
-
-                    // 0.0〜1.0 の座標を -1.0〜1.0 に変換し、感度を掛ける
-                    // 顔が右(x大)に行くとカメラも右(x大)へ → 物体の右側面が見える
-                    // 顔が上(y小)に行くとカメラも上(y大)へ
-                    
-                    // X座標: 画面中央(0.5)からのずれを反転せずに適用
-                    targetCameraX = (face.x - 0.5) * SETTINGS.sensitivity * -5; // 左右反転調整が必要な場合あり
-                    
-                    // Y座標: MediaPipeは上が0なので反転させる
-                    targetCameraY = -(face.y - 0.5) * SETTINGS.sensitivity * 5; 
+                    const face = result.faceLandmarks[0][1];
+                    // 顔の位置を「移動量」ではなく「角度」として解釈する
+                    // sensitivity を調整して回転具合を変えてください
+                    targetAngleX = (face.x - 0.5) * -SETTINGS.sensitivity * 1.5; // 横回転
+                    targetAngleY = -(face.y - 0.5) * SETTINGS.sensitivity * 1.5; // 縦回転
                 }
             }
             window.requestAnimationFrame(predictWebcam);
         }
 
-        // --- メインレンダリングループ ---
+        // --- メインループ ---
         const clock = new THREE.Clock();
+        
+        // 滑らかにするための現在の角度変数
+        let currentAngleX = 0;
+        let currentAngleY = 0;
 
         function animate() {
             requestAnimationFrame(animate);
-
             const delta = clock.getDelta();
             if (mixer) mixer.update(delta);
 
-            // カメラ位置の更新（Lerpを使って滑らかに追従）
-            // 現在の位置 += (目標位置 - 現在の位置) * 係数
-            camera.position.x += (targetCameraX - camera.position.x) * SETTINGS.smoothness;
-            camera.position.y += (targetCameraY - camera.position.y) * SETTINGS.smoothness;
+            if (modelReady) {
+                // 1. 角度を滑らかに更新 (Lerp)
+                currentAngleX += (targetAngleX - currentAngleX) * SETTINGS.smoothness;
+                currentAngleY += (targetAngleY - currentAngleY) * SETTINGS.smoothness;
 
-            // カメラは常に原点（モデルのある位置）を向く
-            camera.lookAt(0, 0, 0);
+                // 2. 球面座標計算: 
+                // モデル中心から、計算した角度の方向に、距離(baseDistance)だけ離れた位置を求める
+                // X = r * sin(x) * cos(y)
+                // Y = r * sin(y)
+                // Z = r * cos(x) * cos(y)
+                // 簡易的に三角関数で計算します
+                
+                const x = baseDistance * Math.sin(currentAngleX) * Math.cos(currentAngleY);
+                const y = baseDistance * Math.sin(currentAngleY);
+                const z = baseDistance * Math.cos(currentAngleX) * Math.cos(currentAngleY);
+
+                // 3. モデル中心座標 + オフセット = 新しいカメラ位置
+                camera.position.set(
+                    modelCenter.x + x,
+                    modelCenter.y + y,
+                    modelCenter.z + z
+                );
+
+                // 4. 常に中心を見る
+                camera.lookAt(modelCenter);
+            }
 
             renderer.render(scene, camera);
         }
 
-        // --- リサイズ対応 ---
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // 開始
         setupMediaPipe();
         animate();
-
     </script>
 </body>
 </html>
