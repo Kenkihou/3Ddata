@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Spherical Parallax</title>
+    <title>Parallax Final: Soft Studio Lighting</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         #video-element { display: none; } 
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #eee; font-family: sans-serif; pointer-events: none; text-align: center;
+            font-size: 14px; letter-spacing: 1px;
         }
     </style>
     <script type="importmap">
@@ -23,70 +24,86 @@
     </script>
 </head>
 <body>
-    <div id="loading">Loading...<br>カメラを許可してください</div>
+    <div id="loading">SOFTENING SHADOWS...<br>Please allow camera access</div>
     <video id="video-element" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { Reflector } from 'three/addons/objects/Reflector.js';
         import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
         // --- 設定 ---
         const SETTINGS = {
-            sensitivity: 2.0, // 視差の強さ
-            smoothness: 0.1,  // 動きの滑らかさ
+            sensitivity: 2.5,
+            smoothness: 0.12,  
             modelPath: './model.glb', 
-            fitPadding: 1.3
+            fitPadding: 1.5,
+            fov: 60,         
+            floorLift: 0.15,
+            stageSize: 6.0   
         };
 
         // --- 初期化 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222); 
+        scene.background = new THREE.Color(0x000000);
+        scene.fog = new THREE.Fog(0x000000, 3, 12);
 
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
+        const camera = new THREE.PerspectiveCamera(SETTINGS.fov, window.innerWidth / window.innerHeight, 0.01, 1000);
+        
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // ソフトシャドウ
+        // トーンマッピング調整（白飛びを抑えつつ明るく）
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.5;
         document.body.appendChild(renderer.domElement);
 
-        // --- ライティング ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        // --- ライティング（ベース） ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
-        dirLight.position.set(3, 10, 7);
-        dirLight.castShadow = true;
-        scene.add(dirLight);
-
+        
         // --- 変数 ---
         let mixer = null;
         let modelCenter = new THREE.Vector3(0, 0, 0); 
-        let baseDistance = 5; // モデルとの基準距離（半径）
+        let baseDistance = 5;
         let modelReady = false;
+        let particleGroup = null;
 
         // --- モデル読み込み ---
         const loader = new GLTFLoader();
         loader.load(SETTINGS.modelPath, (gltf) => {
             const model = gltf.scene;
-            model.traverse(c => { if(c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+            model.traverse(c => { 
+                if(c.isMesh) { 
+                    c.castShadow = true; 
+                    c.receiveShadow = true;
+                    // 肌のマテリアルがあれば、粗さを上げて反射を抑える（テカリ防止）
+                    if(c.material) {
+                        c.material.roughness = 0.7; 
+                    }
+                } 
+            });
             scene.add(model);
 
             model.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(model);
             box.getCenter(modelCenter); 
             const size = box.getSize(new THREE.Vector3());
+            const floorY = box.min.y + SETTINGS.floorLift;
 
-            // 画面に収まる距離を計算
-            const fov = camera.fov * (Math.PI / 180);
+            buildPhysicalNeonRoom(floorY, modelCenter);
+            addStudioLights(modelCenter, floorY); // 新しいライティング関数
+            addParticles(modelCenter);
+
+            const fovRad = camera.fov * (Math.PI / 180);
             const maxDim = Math.max(size.x, size.y, size.z);
-            baseDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * SETTINGS.fitPadding;
+            baseDistance = Math.abs(maxDim / 2 / Math.tan(fovRad / 2)) * SETTINGS.fitPadding;
 
-            // カメラの初期位置セット（Z軸方向）
-            // ここでは位置を決めるだけで、毎フレーム animate で距離が強制補正されます
             camera.position.copy(modelCenter).add(new THREE.Vector3(0, 0, baseDistance));
             camera.lookAt(modelCenter);
-
-            addBackgroundObjects(modelCenter);
 
             if (gltf.animations.length > 0) {
                 mixer = new THREE.AnimationMixer(model);
@@ -101,27 +118,160 @@
             document.getElementById('loading').innerText = "Load Error";
         });
 
-        function addBackgroundObjects(center) {
-            const geoBox = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-            const geoIso = new THREE.IcosahedronGeometry(0.2, 0);
-            const mat = new THREE.MeshStandardMaterial({ color: 0x4488aa });
-            for (let i = 0; i < 50; i++) {
-                const mesh = new THREE.Mesh(Math.random() > 0.5 ? geoBox : geoIso, mat);
-                mesh.position.set(
-                    center.x + (Math.random() - 0.5) * 8,
-                    center.y + (Math.random() - 0.5) * 8,
-                    center.z + (Math.random() - 0.5) * 6 - 2
-                );
-                if (mesh.position.distanceTo(center) < 2.0) continue;
-                mesh.rotation.set(Math.random()*3, Math.random()*3, 0);
-                scene.add(mesh);
+        // --- 【修正】柔らかい3点照明セットアップ ---
+        function addStudioLights(center, floorY) {
+            const floorTarget = new THREE.Vector3(center.x, floorY, center.z);
+
+            // 光の筋ヘルパー
+            function createLightShaft(color, lightSource, targetPoint, widthScale = 1.0) {
+                const height = lightSource.position.distanceTo(targetPoint);
+                const radiusBottom = height * Math.tan(lightSource.angle) * widthScale;
+                const geometry = new THREE.ConeGeometry(radiusBottom, height, 32, 1, true);
+                geometry.translate(0, -height / 2, 0);
+                geometry.rotateX(-Math.PI / 2);
+                const material = new THREE.MeshBasicMaterial({
+                    color: color, transparent: true, opacity: 0.06, // 薄く上品に
+                    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(lightSource.position);
+                mesh.lookAt(targetPoint);
+                return mesh;
+            }
+
+            // 1. キーライト（メイン）: 左手前、目線の高さから
+            // 影を柔らかくするため、エリアライト的に振る舞うよう調整
+            const keyLight = new THREE.SpotLight(0xfff0dd, 30); // 暖色系
+            // 【重要】高さを下げて、正面から当てる
+            keyLight.position.set(center.x - 2, center.y + 2, center.z + 5);
+            keyLight.angle = Math.PI / 8;
+            keyLight.penumbra = 1.0; // フチを完全にぼかす
+            keyLight.decay = 2; keyLight.distance = 40;
+            keyLight.castShadow = true;
+            keyLight.shadow.radius = 4; // 影をぼかす
+            keyLight.shadow.bias = -0.0001;
+            keyLight.target.position.copy(center);
+            scene.add(keyLight.target); scene.add(keyLight);
+            // 光の筋（メイン）
+            scene.add(createLightShaft(0xfff0dd, keyLight, floorTarget));
+
+            // 2. フィルライト（補助）: 右手前、低い位置から
+            // 影を消すための弱い光。影は落とさない。
+            const fillLight = new THREE.SpotLight(0xddeeff, 10); // 寒色系で立体感
+            fillLight.position.set(center.x + 3, center.y + 1, center.z + 4);
+            fillLight.angle = Math.PI / 6;
+            fillLight.penumbra = 1.0;
+            fillLight.decay = 2; fillLight.distance = 40;
+            fillLight.castShadow = false; // 影なし！これが重要
+            fillLight.target.position.copy(center);
+            scene.add(fillLight.target); scene.add(fillLight);
+
+            // 3. リムライト（逆光）: 真後ろ上空から
+            // 輪郭を光らせる。これは強くても良い。
+            const rimLight = new THREE.SpotLight(0xaaaaff, 25);
+            rimLight.position.set(center.x, center.y + 5, center.z - 4);
+            rimLight.angle = Math.PI / 6;
+            rimLight.penumbra = 0.5;
+            rimLight.decay = 2; rimLight.distance = 40;
+            rimLight.castShadow = true;
+            rimLight.target.position.copy(center);
+            scene.add(rimLight.target); scene.add(rimLight);
+            // 光の筋（リム）
+            scene.add(createLightShaft(0xaaaaff, rimLight, floorTarget, 0.8));
+        }
+
+        function buildPhysicalNeonRoom(floorY, center) {
+            const s = SETTINGS.stageSize; 
+            const halfS = s / 2;
+            const neonOffset = 0.15;
+
+            const wallMat = new THREE.MeshStandardMaterial({
+                color: 0x050505, roughness: 0.9, metalness: 0.1, side: THREE.BackSide
+            });
+
+            const roomGeo = new THREE.BoxGeometry(s, s, s);
+            const room = new THREE.Mesh(roomGeo, wallMat);
+            room.position.set(center.x, floorY + halfS, center.z);
+            room.receiveShadow = true;
+            scene.add(room);
+
+            const ceiling = new THREE.Mesh(
+                new THREE.PlaneGeometry(s, s),
+                new THREE.MeshStandardMaterial({ color: 0x000000, side: THREE.BackSide })
+            );
+            ceiling.position.set(center.x, floorY + s, center.z);
+            ceiling.rotation.x = Math.PI / 2;
+            scene.add(ceiling);
+
+            const mirrorGeo = new THREE.PlaneGeometry(s, s);
+            const mirror = new Reflector(mirrorGeo, {
+                clipBias: 0.003,
+                textureWidth: window.innerWidth * window.devicePixelRatio / 4, // 負荷軽減
+                textureHeight: window.innerHeight * window.devicePixelRatio / 4,
+                color: 0x222222 
+            });
+            mirror.rotation.x = -Math.PI / 2;
+            mirror.position.set(center.x, floorY + 0.01, center.z);
+            scene.add(mirror);
+            const floorGrid = new THREE.GridHelper(s, 10, 0x333333, 0x111111);
+            floorGrid.position.set(center.x, floorY + 0.02, center.z);
+            scene.add(floorGrid);
+
+            const neonBarGeo = new THREE.BoxGeometry(s * 0.9, 0.05, 0.05);
+            function createNeonBar(color) {
+                const mat = new THREE.MeshStandardMaterial({
+                    color: 0x000000,
+                    emissive: new THREE.Color(color),
+                    emissiveIntensity: 2.0,
+                    roughness: 0.1, metalness: 0.9
+                });
+                const mesh = new THREE.Mesh(neonBarGeo, mat);
+                mesh.castShadow = true;
+                return mesh;
+            }
+
+            for (let i = 0; i < 5; i++) {
+                const bar = createNeonBar(0xaa00ff);
+                const yPos = floorY + (s * (i + 0.5) / 5);
+                bar.position.set(center.x, yPos, center.z - halfS + neonOffset);
+                scene.add(bar);
+            }
+            for (let i = 0; i < 5; i++) {
+                const bar = createNeonBar(0x0088ff);
+                const yPos = floorY + (s * (i + 0.5) / 5);
+                bar.position.set(center.x + halfS - neonOffset, yPos, center.z);
+                bar.rotation.y = Math.PI / 2;
+                scene.add(bar);
+            }
+            for (let i = 0; i < 5; i++) {
+                const bar = createNeonBar(0x00ff66);
+                const yPos = floorY + (s * (i + 0.5) / 5);
+                bar.position.set(center.x - halfS + neonOffset, yPos, center.z);
+                bar.rotation.y = Math.PI / 2;
+                scene.add(bar);
             }
         }
 
-        // --- MediaPipe ---
+        function addParticles(center) {
+            particleGroup = new THREE.Group();
+            const geometry = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+            const material = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+            const range = SETTINGS.stageSize * 0.9;
+            for (let i = 0; i < 60; i++) {
+                const mesh = new THREE.Mesh(geometry, material);
+                const x = (Math.random() - 0.5) * range;
+                const y = (Math.random()) * range * 0.8;
+                const z = (Math.random() - 0.5) * range; 
+                mesh.position.set(center.x + x, center.y + y, center.z + z);
+                mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+                particleGroup.add(mesh);
+            }
+            scene.add(particleGroup);
+        }
+
         let faceLandmarker;
         let lastVideoTime = -1;
-        let targetAngleX = 0, targetAngleY = 0; // 角度で管理
+        let targetAngleX = 0, targetAngleY = 0;
         const video = document.getElementById('video-element');
 
         async function setupMediaPipe() {
@@ -149,19 +299,14 @@
                 const result = faceLandmarker.detectForVideo(video, performance.now());
                 if (result.faceLandmarks.length > 0) {
                     const face = result.faceLandmarks[0][1];
-                    // 顔の位置を「移動量」ではなく「角度」として解釈する
-                    // sensitivity を調整して回転具合を変えてください
-                    targetAngleX = (face.x - 0.5) * -SETTINGS.sensitivity * 1.5; // 横回転
-                    targetAngleY = -(face.y - 0.5) * SETTINGS.sensitivity * 1.5; // 縦回転
+                    targetAngleX = (face.x - 0.5) * -SETTINGS.sensitivity * 1.5; 
+                    targetAngleY = -(face.y - 0.5) * SETTINGS.sensitivity * 1.5;
                 }
             }
             window.requestAnimationFrame(predictWebcam);
         }
 
-        // --- メインループ ---
         const clock = new THREE.Clock();
-        
-        // 滑らかにするための現在の角度変数
         let currentAngleX = 0;
         let currentAngleY = 0;
 
@@ -171,32 +316,24 @@
             if (mixer) mixer.update(delta);
 
             if (modelReady) {
-                // 1. 角度を滑らかに更新 (Lerp)
                 currentAngleX += (targetAngleX - currentAngleX) * SETTINGS.smoothness;
                 currentAngleY += (targetAngleY - currentAngleY) * SETTINGS.smoothness;
 
-                // 2. 球面座標計算: 
-                // モデル中心から、計算した角度の方向に、距離(baseDistance)だけ離れた位置を求める
-                // X = r * sin(x) * cos(y)
-                // Y = r * sin(y)
-                // Z = r * cos(x) * cos(y)
-                // 簡易的に三角関数で計算します
-                
                 const x = baseDistance * Math.sin(currentAngleX) * Math.cos(currentAngleY);
                 const y = baseDistance * Math.sin(currentAngleY);
                 const z = baseDistance * Math.cos(currentAngleX) * Math.cos(currentAngleY);
 
-                // 3. モデル中心座標 + オフセット = 新しいカメラ位置
                 camera.position.set(
                     modelCenter.x + x,
                     modelCenter.y + y,
                     modelCenter.z + z
                 );
-
-                // 4. 常に中心を見る
                 camera.lookAt(modelCenter);
-            }
 
+                if (particleGroup) {
+                    particleGroup.rotation.y += delta * 0.05; 
+                }
+            }
             renderer.render(scene, camera);
         }
 
