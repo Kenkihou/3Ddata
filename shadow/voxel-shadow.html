@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>３D日影シミュレーター</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #b0c4de; font-family: sans-serif; }
+        
+        #ui-container {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95); padding: 15px 25px; border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 340px;
+            box-sizing: border-box;
+        }
+
+        .header-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .label { font-size: 14px; font-weight: bold; color: #333; }
+        .time-display { font-family: monospace; font-size: 20px; color: #2196F3; font-weight: bold; text-align: center; margin: 5px 0; }
+        
+        input[type=range] { width: 100%; margin: 10px 0; cursor: pointer; }
+
+        .switch-container {
+            display: flex; align-items: center; font-size: 11px; font-weight: bold; color: #555;
+        }
+        .switch-label { margin-right: 6px; }
+        .toggle-switch {
+            position: relative; display: inline-block; width: 40px; height: 20px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider-round {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc; transition: .4s; border-radius: 34px;
+        }
+        .slider-round:before {
+            position: absolute; content: "";
+            height: 16px; width: 16px;
+            left: 2px; bottom: 2px;
+            background-color: white; transition: .4s; border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input:checked + .slider-round { background-color: #ff5722; }
+        input:checked + .slider-round:before { transform: translateX(20px); }
+
+        .legend {
+            display: flex; justify-content: space-between; font-size: 10px; margin-top: 8px; font-weight: bold;
+            background: rgba(255,255,255,0.5); padding: 4px; border-radius: 4px;
+            transition: opacity 0.3s;
+            opacity: 0; 
+        }
+        .legend span { display: inline-block; width: 10px; height: 10px; margin-right: 3px; vertical-align: middle; border-radius: 50%; }
+
+        #loading-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9); z-index: 999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: opacity 0.5s;
+        }
+        .loader {
+            border: 5px solid #f3f3f3; border-top: 5px solid #3498db;
+            border-radius: 50%; width: 40px; height: 40px;
+            animation: spin 1s linear infinite; margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay">
+        <div class="loader"></div>
+        <div id="loading-text">空間日影データを計算中...<br>（数秒かかる場合があります）</div>
+    </div>
+
+    <div id="ui-container">
+        <div class="header-row">
+            <div class="label">時刻操作 (冬至)</div>
+            <div class="switch-container">
+                <span class="switch-label">等時間色</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="modeToggle">
+                    <span class="slider-round"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="time-display" id="timeStr">08:00</div>
+        <input type="range" id="timeSlider" min="8" max="16" step="0.05" value="8.0">
+        
+        <div class="legend" id="legendPanel">
+            <div><span style="background:#4488ff"></span>0-1h</div>
+            <div><span style="background:#00ff00"></span>1-2h</div>
+            <div><span style="background:#ffff00"></span>2-3h</div>
+            <div><span style="background:#ff8800"></span>3-4h</div>
+            <div><span style="background:#ff0000"></span>4h~</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- 設定値 ---
+        const BUILDING_W = 6;
+        const BUILDING_D = 6;
+        const BUILDING_H = 8;
+        
+        const SPHERE_SIZE = 0.05; 
+        
+        const DENSITY_EDGE = 0.3;   
+        const DENSITY_VOL  = 0.6;   
+        const RAY_STEP_EDGE = 0.3;  
+        const RAY_STEP_VOL  = 0.6;  
+        const MAX_INSTANCES = 200000; 
+
+        const VOXEL_SIZE = 0.5; 
+        const VOXEL_AREA_W = 40; 
+        const VOXEL_AREA_D = 40; 
+        const VOXEL_AREA_H = 10; 
+
+        const LATITUDE = 35.0167;
+        const LONGITUDE = 135.7333;
+        const DATE_WINTER = new Date('2024-12-22T12:00:00');
+
+        // --- Three.js 初期化 ---
+        const scene = new THREE.Scene();
+        const SKY_COLOR = 0xb0c4de;
+        scene.background = new THREE.Color(SKY_COLOR);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000); 
+        camera.position.set(0, 40, 30);
+        camera.lookAt(0, BUILDING_H / 2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, BUILDING_H/2, 0);
+        controls.maxPolarAngle = Math.PI / 2;
+        controls.update();
+
+        // ★修正: カメラ操作時のみ再描画するイベントリスナーを追加
+        controls.addEventListener('change', render);
+
+        // --- ライト ---
+        const ambientLight = new THREE.AmbientLight(0x666666);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.set(2048, 2048);
+        dirLight.shadow.bias = -0.0005; 
+        
+        const d = 100;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        dirLight.shadow.camera.far = 500;
+        scene.add(dirLight);
+
+        // --- オブジェクト ---
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(200, 200),
+            new THREE.MeshLambertMaterial({ color: 0xeeeeee })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const bGeo = new THREE.BoxGeometry(BUILDING_W, BUILDING_H, BUILDING_D);
+        bGeo.translate(0, BUILDING_H / 2, 0); 
+        
+        const bMat = new THREE.MeshPhongMaterial({ 
+            color: 0x0066ff, 
+            transparent: true, 
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+        const building = new THREE.Mesh(bGeo, bMat);
+        building.castShadow = true;
+        building.receiveShadow = true;
+        scene.add(building);
+        
+        const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(bGeo),
+            new THREE.LineBasicMaterial({ color: 0x000000 })
+        );
+        scene.add(edges);
+
+        // --- 影の粒子 ---
+        const iGeo = new THREE.SphereGeometry(SPHERE_SIZE, 4, 4);
+
+        const matEdge = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.9 
+        }); 
+        const particlesEdge = new THREE.InstancedMesh(iGeo, matEdge, MAX_INSTANCES);
+        particlesEdge.frustumCulled = false;
+        
+        const matVol = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff, 
+            transparent: true, 
+            opacity: 0.3, 
+            depthWrite: false 
+        });
+        const particlesVol = new THREE.InstancedMesh(iGeo, matVol, MAX_INSTANCES);
+        particlesVol.frustumCulled = false;
+
+        const dummyColor = new THREE.Color(0xffffff);
+        for(let i=0; i<MAX_INSTANCES; i++) {
+            particlesEdge.setColorAt(i, dummyColor);
+            particlesVol.setColorAt(i, dummyColor);
+        }
+        particlesEdge.instanceColor.needsUpdate = true;
+        particlesVol.instanceColor.needsUpdate = true;
+        scene.add(particlesEdge);
+        scene.add(particlesVol);
+
+        // --- 変数 ---
+        const dummy = new THREE.Object3D();
+        const startPoint = new THREE.Vector3();
+        const currentPoint = new THREE.Vector3();
+        const shadowDir = new THREE.Vector3();
+        const tempColor = new THREE.Color();
+        const blackColor = new THREE.Color(0x000000); 
+
+        let isSystemReady = false;
+
+        // --- 太陽計算 ---
+        function getSunVector(hours) {
+            const times = SunCalc.getTimes(DATE_WINTER, LATITUDE, LONGITUDE);
+            const solarNoon = times.solarNoon;
+            const offsetMs = (hours - 12.0) * 3600 * 1000;
+            const targetDate = new Date(solarNoon.getTime() + offsetMs);
+            const pos = SunCalc.getPosition(targetDate, LATITUDE, LONGITUDE);
+            const r = 100;
+            const x = -1 * r * Math.sin(pos.azimuth) * Math.cos(pos.altitude); 
+            const y = r * Math.sin(pos.altitude);                       
+            const z = r * Math.cos(pos.azimuth) * Math.cos(pos.altitude); 
+            return new THREE.Vector3(x, y, z).normalize();
+        }
+
+        function isPointInBuilding(p) {
+            const halfW = BUILDING_W / 2;
+            const halfD = BUILDING_D / 2;
+            const margin = SPHERE_SIZE * 0.5; 
+            return (
+                p.x >= -halfW - margin && p.x <= halfW + margin &&
+                p.z >= -halfD - margin && p.z <= halfD + margin &&
+                p.y >= -margin && p.y <= BUILDING_H + margin
+            );
+        }
+
+        // --- ボクセル計算 ---
+        const shadowMap = new Map();
+        function getVoxelKey(x, y, z) {
+            const vx = Math.round(x / VOXEL_SIZE);
+            const vy = Math.round(y / VOXEL_SIZE);
+            const vz = Math.round(z / VOXEL_SIZE);
+            return `${vx},${vy},${vz}`;
+        }
+
+        function checkShadowFast(originX, originY, originZ, dirX, dirY, dirZ) {
+            const minX = -BUILDING_W/2, maxX = BUILDING_W/2;
+            const minY = 0, maxY = BUILDING_H;
+            const minZ = -BUILDING_D/2, maxZ = BUILDING_D/2;
+
+            let tMin = -Infinity, tMax = Infinity;
+            if (Math.abs(dirX) < 1e-6) {
+                if (originX < minX || originX > maxX) return false;
+            } else {
+                let t1 = (minX - originX) / dirX; let t2 = (maxX - originX) / dirX;
+                if (t1 > t2) [t1, t2] = [t2, t1];
+                tMin = Math.max(tMin, t1); tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return false;
+            }
+            if (Math.abs(dirY) < 1e-6) {
+                if (originY < minY || originY > maxY) return false;
+            } else {
+                let t1 = (minY - originY) / dirY; let t2 = (maxY - originY) / dirY;
+                if (t1 > t2) [t1, t2] = [t2, t1];
+                tMin = Math.max(tMin, t1); tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return false;
+            }
+            if (Math.abs(dirZ) < 1e-6) {
+                if (originZ < minZ || originZ > maxZ) return false;
+            } else {
+                let t1 = (minZ - originZ) / dirZ; let t2 = (maxZ - originZ) / dirZ;
+                if (t1 > t2) [t1, t2] = [t2, t1];
+                tMin = Math.max(tMin, t1); tMax = Math.min(tMax, t2);
+                if (tMin > tMax) return false;
+            }
+            return tMax > 0;
+        }
+
+        async function bakeShadowMap() {
+            const sunDirs = [];
+            for(let h=8; h<=16; h+= 10/60) {
+                const vec = getSunVector(h);
+                if(vec.y > 0) sunDirs.push({ x: -vec.x, y: -vec.y, z: -vec.z });
+            }
+            
+            const startX = -VOXEL_AREA_W/2, endX = VOXEL_AREA_W/2;
+            const startZ = -VOXEL_AREA_D/2, endZ = VOXEL_AREA_D/2;
+            const endY = VOXEL_AREA_H;
+            const stepX = VOXEL_SIZE;
+            
+            for (let x = startX; x <= endX; x += stepX) {
+                for (let z = startZ; z <= endZ; z += stepX) {
+                    for (let y = 0; y <= endY; y += stepX) {
+                        if (x > -BUILDING_W/2 && x < BUILDING_W/2 && 
+                            z > -BUILDING_D/2 && z < BUILDING_D/2 && 
+                            y < BUILDING_H) continue;
+                        let shadowCount = 0;
+                        for(let i=0; i<sunDirs.length; i++) {
+                            const dir = sunDirs[i];
+                            if (checkShadowFast(x, y, z, -dir.x, -dir.y, -dir.z)) shadowCount++;
+                        }
+                        if (shadowCount > 0) {
+                            shadowMap.set(getVoxelKey(x, y, z), shadowCount * 10);
+                        }
+                    }
+                }
+                if (x % (stepX * 5) === 0) await new Promise(r => setTimeout(r, 0));
+            }
+            
+            isSystemReady = true;
+            updateShadowParticles();
+
+            document.getElementById('loading-overlay').style.opacity = 0;
+            setTimeout(() => { document.getElementById('loading-overlay').style.display = 'none'; }, 500);
+        }
+
+        function getColorForDuration(minutes) {
+            if (minutes < 60) return tempColor.setHex(0x4488ff); 
+            if (minutes < 120) return tempColor.setHex(0x00ff00); 
+            if (minutes < 180) return tempColor.setHex(0xffff00); 
+            if (minutes < 240) return tempColor.setHex(0xff8800); 
+            return tempColor.setHex(0xff0000); 
+        }
+
+        // --- 描画関数 (単発) ---
+        // ★修正: アニメーションループではなく、呼び出された時だけ描画する
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+        function updateShadowParticles() {
+            if (!isSystemReady) return;
+
+            const timeVal = parseFloat(document.getElementById('timeSlider').value);
+            const isHeatmap = document.getElementById('modeToggle').checked;
+            
+            document.getElementById('legendPanel').style.opacity = isHeatmap ? '1' : '0';
+
+            const h = Math.floor(timeVal);
+            const m = Math.floor((timeVal - h) * 60);
+            document.getElementById('timeStr').innerText = 
+                `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+
+            const sunVec = getSunVector(timeVal);
+            dirLight.position.copy(sunVec).multiplyScalar(50);
+
+            if (sunVec.y <= 0) {
+                particlesEdge.count = 0;
+                particlesVol.count = 0;
+                particlesEdge.instanceMatrix.needsUpdate = true;
+                particlesVol.instanceMatrix.needsUpdate = true;
+                render(); // 空の場合は描画して終了
+                return;
+            }
+
+            shadowDir.copy(sunVec).negate().normalize();
+            
+            const isLit_Right  = (sunVec.x > 0); const isLit_Left   = (sunVec.x < 0);
+            const isLit_Top    = (sunVec.y > 0); const isLit_Bottom = (sunVec.y < 0);
+            const isLit_Front  = (sunVec.z > 0); const isLit_Back   = (sunVec.z < 0);
+
+            let idxEdge = 0;
+            let idxVol = 0;
+
+            const startX = -BUILDING_W / 2;
+            const startZ = -BUILDING_D / 2;
+            
+            const stepsX = Math.round(BUILDING_W / DENSITY_EDGE);
+            const stepsZ = Math.round(BUILDING_D / DENSITY_EDGE);
+            const stepsY = Math.round(BUILDING_H / DENSITY_EDGE);
+            const skipMod = Math.floor(DENSITY_VOL / DENSITY_EDGE);
+
+            for (let i = 0; i <= stepsX; i++) {
+                const x = startX + (BUILDING_W * i / stepsX);
+                const isRight = (i === stepsX); const isLeft  = (i === 0);
+                for (let k = 0; k <= stepsZ; k++) {
+                    const z = startZ + (BUILDING_D * k / stepsZ);
+                    const isFront = (k === stepsZ); const isBack  = (k === 0);
+                    for (let j = 0; j <= stepsY; j++) {
+                        const y = 0 + (BUILDING_H * j / stepsY);
+                        const isTop = (j === stepsY); const isBottom = (j === 0);
+
+                        let faceCount = 0; let litCount = 0;
+                        if (isRight) { faceCount++; if(isLit_Right) litCount++; }
+                        if (isLeft)  { faceCount++; if(isLit_Left)  litCount++; }
+                        if (isTop)   { faceCount++; if(isLit_Top)   litCount++; }
+                        if (isBottom){ faceCount++; if(isLit_Bottom)litCount++; }
+                        if (isFront) { faceCount++; if(isLit_Front) litCount++; }
+                        if (isBack)  { faceCount++; if(isLit_Back)  litCount++; }
+
+                        const isSilhouette = (faceCount > 0) && (litCount > 0 && litCount < faceCount);
+                        let isEdge = false; let isVol  = false;
+
+                        if (isSilhouette) isEdge = true;
+                        else {
+                            if ((i % skipMod === 0) && (k % skipMod === 0) && (j % skipMod === 0)) isVol = true;
+                        }
+
+                        if (!isEdge && !isVol) continue;
+
+                        const step = isEdge ? RAY_STEP_EDGE : RAY_STEP_VOL;
+                        startPoint.set(x, y, z);
+                        if (shadowDir.y >= 0) continue; 
+                        
+                        const distToGround = -startPoint.y / shadowDir.y;
+
+                        for (let d = 0; d < distToGround; d += step) {
+                            currentPoint.copy(startPoint).addScaledVector(shadowDir, d);
+                            if (isPointInBuilding(currentPoint)) continue;
+
+                            dummy.position.copy(currentPoint);
+                            dummy.updateMatrix();
+                            
+                            let col = blackColor;
+                            if (isHeatmap) {
+                                const key = getVoxelKey(currentPoint.x, currentPoint.y, currentPoint.z);
+                                col = getColorForDuration(shadowMap.get(key) || 0);
+                            }
+
+                            if (isEdge) {
+                                if (idxEdge < MAX_INSTANCES) {
+                                    particlesEdge.setMatrixAt(idxEdge, dummy.matrix);
+                                    particlesEdge.setColorAt(idxEdge, col);
+                                    idxEdge++;
+                                }
+                            } else {
+                                if (idxVol < MAX_INSTANCES) {
+                                    particlesVol.setMatrixAt(idxVol, dummy.matrix);
+                                    particlesVol.setColorAt(idxVol, col);
+                                    idxVol++;
+                                }
+                            }
+                        }
+                        
+                        currentPoint.copy(startPoint).addScaledVector(shadowDir, distToGround);
+                        if (!isPointInBuilding(currentPoint)) {
+                            dummy.position.copy(currentPoint);
+                            dummy.updateMatrix();
+                            
+                            let col = blackColor;
+                            if (isHeatmap) {
+                                const key = getVoxelKey(currentPoint.x, currentPoint.y, currentPoint.z);
+                                col = getColorForDuration(shadowMap.get(key) || 0);
+                            }
+
+                            if (isEdge) {
+                                if (idxEdge < MAX_INSTANCES) {
+                                    particlesEdge.setMatrixAt(idxEdge, dummy.matrix);
+                                    particlesEdge.setColorAt(idxEdge, col);
+                                    idxEdge++;
+                                }
+                            } else {
+                                if (idxVol < MAX_INSTANCES) {
+                                    particlesVol.setMatrixAt(idxVol, dummy.matrix);
+                                    particlesVol.setColorAt(idxVol, col);
+                                    idxVol++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            particlesEdge.count = idxEdge;
+            particlesVol.count = idxVol;
+            particlesEdge.instanceMatrix.needsUpdate = true;
+            if (particlesEdge.instanceColor) particlesEdge.instanceColor.needsUpdate = true;
+            if (particlesVol.instanceColor) particlesVol.instanceColor.needsUpdate = true;
+            particlesVol.instanceMatrix.needsUpdate = true;
+
+            // ★修正: 内容更新後に必ず1回描画
+            render();
+        }
+
+        document.getElementById('timeSlider').addEventListener('input', updateShadowParticles);
+        document.getElementById('modeToggle').addEventListener('change', updateShadowParticles);
+        
+        // リサイズ時も単発レンダリング
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            render();
+        });
+
+        // 初回起動
+        bakeShadowMap(); // 内部で updateShadowParticles -> render が呼ばれる
+
+    </script>
+</body>
+</html>
