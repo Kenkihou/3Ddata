@@ -59,11 +59,24 @@
     .sub { margin: 6px 0 26px; color: var(--muted); font-size: 13px; line-height: 1.6; }
     label { display: block; text-align: left; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
     .row { display: flex; gap: 8px; }
-    input[type=password] {
-      flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 11px 12px;
+    /* 入力欄と、中の右端の「表示する」目のボタン */
+    .pw-box { position: relative; flex: 1; min-width: 0; display: flex; }
+    #pw {
+      flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 11px 44px 11px 12px;
       border: 1.5px solid var(--line); border-radius: 10px; outline: none; background: #fbfcfd;
     }
-    input[type=password]:focus { border-color: var(--blue); background: #fff; }
+    #pw:focus { border-color: var(--blue); background: #fff; }
+    #pw::-ms-reveal, #pw::-ms-clear { display: none; }   /* Edge の印は入力中しか出ないので、自前のボタンに一本化 */
+    .eye-btn {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px;
+      background: transparent; color: #64748b; display: flex; align-items: center; justify-content: center;
+    }
+    .eye-btn:hover { background: #eef2f6; color: var(--ink); }
+    .eye-btn svg { width: 22px; height: 22px; }
+    .eye-btn .slash { display: none; }
+    .eye-btn[aria-pressed="true"] { color: var(--blue); }
+    .eye-btn[aria-pressed="true"] .slash { display: inline; }
     button {
       font: inherit; font-weight: 700; font-size: 15px; padding: 0 18px; border: 0; border-radius: 10px;
       background: var(--blue); color: #fff; cursor: pointer;
@@ -83,10 +96,18 @@
   <form class="card" id="gate" autocomplete="off">
     <p class="tag">まちを見通す</p>
     <h1 class="logo" aria-label="Mitoooos（みとおす）"><span class="t" aria-hidden="true">Mit</span><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#8a5c35" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#4f9a5b" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#10707a" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#3b8be6" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><span class="t t-r" aria-hidden="true">s</span></h1>
-    <p class="sub">景観シミュレーター<br>パスワードを入れてください</p>
+    <p class="sub">パスワードを入れてください</p>
     <label for="pw">パスワード</label>
     <div class="row">
-      <input type="password" id="pw" autocomplete="current-password" autofocus>
+      <span class="pw-box">
+        <input type="password" id="pw" autocomplete="current-password" autofocus>
+        <button type="button" class="eye-btn" id="eye" aria-label="パスワードを表示する" aria-pressed="false" title="パスワードを表示する">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+            <path class="slash" d="M4 4l16 16"/>
+          </svg>
+        </button>
+      </span>
       <button type="submit" id="go">開く</button>
     </div>
     <p class="msg" id="msg" role="alert"></p>
@@ -105,6 +126,19 @@
       var go = document.getElementById('go');
       var msg = document.getElementById('msg');
       var app = document.getElementById('app');
+      var eye = document.getElementById('eye');
+
+      // 目のボタン：押すたびにパスワードの表示・非表示を切り替える（カーソルの位置は保つ）
+      eye.addEventListener('click', function () {
+        var show = pw.type === 'password';
+        var a = pw.selectionStart, b = pw.selectionEnd;
+        pw.type = show ? 'text' : 'password';
+        eye.setAttribute('aria-pressed', String(show));
+        var label = show ? 'パスワードを隠す' : 'パスワードを表示する';
+        eye.setAttribute('aria-label', label); eye.title = label;
+        pw.focus();
+        try { pw.setSelectionRange(a, b); } catch (e) { /* 無視 */ }
+      });
 
       // 以前の版が覚えていた印を消す（いまは覚えない）
       try { sessionStorage.removeItem('mitoooos_gate'); } catch (e) { /* 無視 */ }
