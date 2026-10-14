@@ -12,7 +12,8 @@
     ・本体の側は、公開サイトで「この入口の中」以外から開かれると、ここへ戻す（本体の index.html の先頭）。
     ・照合はブラウザの中だけ（SHA-256）。平文のパスワードはどこにも置かない。
       ⚠️ 鍵ではなく目隠し。本体の URL を知っていれば、開発者ツールなどで回り込める。
-    ・一度通ると、そのタブを閉じるまでは聞き直さない（sessionStorage）。
+    ・覚えておかない。再読み込みのたびにパスワードを聞く（2026-10-14 ユーザー要望）。
+      以前に覚えていた印（sessionStorage の mitoooos_gate）は開いたときに消す。
   -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,7 +78,6 @@
       var APP_URL = '/Keikan_sim202607/';
       // SHA-256('mitoooos:' + パスワード)。パスワードを変えるときはここを書き換える
       var HASH = 'c73bb1bdf5c0d5b3e5438ca6b00422ba2e469014958760a73ab079e7b763f57a';
-      var KEY = 'mitoooos_gate';
 
       var form = document.getElementById('gate');
       var pw = document.getElementById('pw');
@@ -85,8 +85,8 @@
       var msg = document.getElementById('msg');
       var app = document.getElementById('app');
 
-      function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { /* 使えなくても開ける */ } }
-      function stored(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+      // 以前の版が覚えていた印を消す（いまは覚えない）
+      try { sessionStorage.removeItem('mitoooos_gate'); } catch (e) { /* 無視 */ }
 
       function open() {
         document.body.classList.add('open');
@@ -102,8 +102,6 @@
         return Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
       }
 
-      if (stored(KEY) === HASH) { open(); return; }
-
       form.addEventListener('submit', async function (ev) {
         ev.preventDefault();
         msg.textContent = '';
@@ -111,7 +109,6 @@
         try {
           var h = await sha256('mitoooos:' + pw.value);
           if (h === HASH) {
-            store(KEY, HASH);
             open();
           } else {
             msg.textContent = 'パスワードが違います';
