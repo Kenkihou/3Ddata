@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mitoooos</title>
+  <!--
+    Mitoooos（景観検討シミュレーター）の入口。
+    ・パスワードが合えば、このページの中に本体（/Keikan_sim202607/）を全画面の iframe で開く。
+      アドレス欄はこのページの URL のまま。同じ kenkihou.github.io の下なので、本体はふつうに動く。
+    ・本体の側は、公開サイトで「この入口の中」以外から開かれると、ここへ戻す（本体の index.html の先頭）。
+    ・照合はブラウザの中だけ（SHA-256）。平文のパスワードはどこにも置かない。
+      ⚠️ 鍵ではなく目隠し。本体の URL を知っていれば、開発者ツールなどで回り込める。
+    ・一度通ると、そのタブを閉じるまでは聞き直さない（sessionStorage）。
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #eef2f6; --card: #ffffff; --ink: #1f2d3a; --muted: #6b7a89;
+      --blue: #1f5fbf; --blue-d: #174a96; --line: #d5dde6; --err: #c0392b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: 'Zen Maru Gothic', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .card {
+      width: 100%; max-width: 380px; background: var(--card); border-radius: 18px;
+      padding: 36px 28px 28px; box-shadow: 0 18px 50px rgba(20, 40, 70, .14); text-align: center;
+    }
+    .logo { font-family: 'Fredoka', sans-serif; font-size: 46px; letter-spacing: .02em; color: var(--blue); margin: 0; }
+    .logo span { color: #2d8a7f; }
+    .sub { margin: 6px 0 26px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    label { display: block; text-align: left; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; }
+    input[type=password] {
+      flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 11px 12px;
+      border: 1.5px solid var(--line); border-radius: 10px; outline: none; background: #fbfcfd;
+    }
+    input[type=password]:focus { border-color: var(--blue); background: #fff; }
+    button {
+      font: inherit; font-weight: 700; font-size: 15px; padding: 0 18px; border: 0; border-radius: 10px;
+      background: var(--blue); color: #fff; cursor: pointer;
+    }
+    button:hover { background: var(--blue-d); }
+    button:disabled { opacity: .6; cursor: default; }
+    .msg { min-height: 1.6em; margin: 12px 0 0; font-size: 13px; color: var(--err); }
+    .shake { animation: shake .35s; }
+    @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+    #app { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
+    body.open { padding: 0; }
+    body.open .card { display: none; }
+    body.open #app { display: block; }
+  </style>
+</head>
+<body>
+  <form class="card" id="gate" autocomplete="off">
+    <h1 class="logo">Mit<span>oooo</span>s</h1>
+    <p class="sub">景観検討シミュレーター<br>パスワードを入れてください</p>
+    <label for="pw">パスワード</label>
+    <div class="row">
+      <input type="password" id="pw" autocomplete="current-password" autofocus>
+      <button type="submit" id="go">開く</button>
+    </div>
+    <p class="msg" id="msg" role="alert"></p>
+  </form>
+  <iframe id="app" title="Mitoooos" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+
+  <script>
+    (function () {
+      // 本体（同じ kenkihou.github.io の下）
+      var APP_URL = '/Keikan_sim202607/';
+      // SHA-256('mitoooos:' + パスワード)。パスワードを変えるときはここを書き換える
+      var HASH = 'c73bb1bdf5c0d5b3e5438ca6b00422ba2e469014958760a73ab079e7b763f57a';
+      var KEY = 'mitoooos_gate';
+
+      var form = document.getElementById('gate');
+      var pw = document.getElementById('pw');
+      var go = document.getElementById('go');
+      var msg = document.getElementById('msg');
+      var app = document.getElementById('app');
+
+      function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { /* 使えなくても開ける */ } }
+      function stored(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+
+      function open() {
+        document.body.classList.add('open');
+        app.src = APP_URL;
+        // 題名は本体のものを写す（同じサイトなので読める）
+        app.addEventListener('load', function () {
+          try { if (app.contentDocument && app.contentDocument.title) document.title = app.contentDocument.title; } catch (e) { /* そのまま */ }
+        });
+      }
+
+      async function sha256(text) {
+        var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      }
+
+      if (stored(KEY) === HASH) { open(); return; }
+
+      form.addEventListener('submit', async function (ev) {
+        ev.preventDefault();
+        msg.textContent = '';
+        go.disabled = true;
+        try {
+          var h = await sha256('mitoooos:' + pw.value);
+          if (h === HASH) {
+            store(KEY, HASH);
+            open();
+          } else {
+            msg.textContent = 'パスワードが違います';
+            form.classList.remove('shake'); void form.offsetWidth; form.classList.add('shake');
+            pw.select();
+          }
+        } catch (e) {
+          msg.textContent = 'このブラウザでは確認できませんでした';
+        } finally {
+          go.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
