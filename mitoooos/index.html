@@ -34,8 +34,28 @@
       width: 100%; max-width: 380px; background: var(--card); border-radius: 18px;
       padding: 36px 28px 28px; box-shadow: 0 18px 50px rgba(20, 40, 70, .14); text-align: center;
     }
-    .logo { font-family: 'Fredoka', sans-serif; font-size: 46px; letter-spacing: .02em; color: var(--blue); margin: 0; }
-    .logo span { color: #2d8a7f; }
+    /* 見出しは本体のトップページ（01 index.html の #portal-title）と同じ形：添え書き＋ Mit＋4つの目玉＋s */
+    .tag {
+      margin: 0 0 10px; display: flex; align-items: center; justify-content: center; gap: 10px;
+      font-size: 15px; font-weight: 700; letter-spacing: .3em; color: #0f6f78;
+    }
+    .tag::before, .tag::after {
+      content: ''; width: 26px; height: 2px; border-radius: 1px;
+      background: linear-gradient(90deg, rgba(15, 111, 120, 0), rgba(15, 111, 120, .55));
+    }
+    .tag::after { transform: scaleX(-1); margin-left: -.3em; }
+    .logo {
+      margin: 0; display: flex; align-items: baseline; justify-content: center;
+      font-family: 'Fredoka', sans-serif; font-size: 54px; font-weight: 600; line-height: 1; letter-spacing: .5px;
+    }
+    .logo .t { background: linear-gradient(180deg, #0a52b8 0%, #0a3a8f 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .logo .t-r { background: linear-gradient(180deg, #0f7d86 0%, #0b5c6e 100%); -webkit-background-clip: text; background-clip: text; }
+    .logo .brand-eye {
+      width: .6em; height: .6em; margin: 0 .012em; position: relative; top: .035em; overflow: visible;
+      filter: drop-shadow(0 2px 3px rgba(15, 23, 42, .18));
+    }
+    .logo .brand-eye:first-of-type { margin-left: .04em; }
+    .logo .brand-eye + .t { margin-left: .04em; }
     .sub { margin: 6px 0 26px; color: var(--muted); font-size: 13px; line-height: 1.6; }
     label { display: block; text-align: left; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
     .row { display: flex; gap: 8px; }
@@ -61,8 +81,9 @@
 </head>
 <body>
   <form class="card" id="gate" autocomplete="off">
-    <h1 class="logo">Mit<span>oooo</span>s</h1>
-    <p class="sub">まちを見通す景観シミュレーター<br>パスワードを入れてください</p>
+    <p class="tag">まちを見通す</p>
+    <h1 class="logo" aria-label="Mitoooos（みとおす）"><span class="t" aria-hidden="true">Mit</span><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#8a5c35" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#8a5c35" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#4f9a5b" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#4f9a5b" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#10707a" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#10707a" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><svg class="brand-eye" viewBox="0 0 100 100" aria-hidden="true"><line x1="20.4" y1="12.2" x2="11.8" y2="1.1" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><line x1="40.0" y1="3.0" x2="37.1" y2="-10.6" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><line x1="61.6" y1="3.4" x2="65.0" y2="-10.2" stroke="#3b8be6" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="42" fill="#ffffff" stroke="#3b8be6" stroke-width="12"/><ellipse cx="60" cy="43" rx="15" ry="18" fill="#14213d"/><circle cx="65" cy="36" r="5" fill="#ffffff"/></svg><span class="t t-r" aria-hidden="true">s</span></h1>
+    <p class="sub">景観シミュレーター<br>パスワードを入れてください</p>
     <label for="pw">パスワード</label>
     <div class="row">
       <input type="password" id="pw" autocomplete="current-password" autofocus>
